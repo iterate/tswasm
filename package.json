@@ -1,0 +1,30 @@
+{
+  "name": "tswasm",
+  "version": "0.0.0",
+  "description": "Embeddable TypeScript compilation via typescript-go compiled to wasm.",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:wasm": "tsx scripts/build-wasm.ts",
+    "build:js": "tsc -p tsconfig.json",
+    "build": "pnpm run build:wasm && pnpm run build:js",
+    "test": "pnpm run build && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}
