@@ -132,6 +132,21 @@ Representative post-cache full run:
 - simple `tswasm cold createCompiler+compile`: 60.51ms mean;
 - type-heavy `tswasm cold createCompiler+compile`: 56.63ms mean.
 
+## 2026-06-18 summary categorization
+
+Changed benchmark output and README tables to group comparisons by relevance:
+
+1. Portable full compile: `tswasm`, `ts-morph`, and classic TypeScript JS full
+   program. This is the primary comparison because all rows can run in
+   wasm-capable environments.
+2. Emit-only baseline: `transpileModule`, explicitly not apples-to-apples.
+3. tswasm internals: profile-only rows.
+4. Native Go curiosity: useful to explain the gap, but not a substitute in
+   browser/Worker/wasm-only environments.
+
+Also fixed `--filter` so it can match either source names, such as
+`type-heavy`, or row names, such as `warm`.
+
 ## 2026-06-18 same-path native helper
 
 Added `go/tswasm-native-bench/main.go` as a benchmark-only native helper. The

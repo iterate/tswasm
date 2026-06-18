@@ -53,6 +53,12 @@ interface BenchRow {
   method: "tinybench" | "fixed-samples";
 }
 
+interface BenchCategory {
+  name: string;
+  description: string;
+  rows: BenchRow[];
+}
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const typescriptGoRoot = path.join(repoRoot, "typescript-go");
 const tsgoBinary = path.join(repoRoot, "dist", "bench-tsgo");
@@ -149,14 +155,10 @@ const warmCompiler = await createCompiler();
 const rows: BenchRow[] = [];
 
 for (const source of sourceCases) {
-  if (!matchesFilter(source.name, options.filter)) {
-    continue;
-  }
-
   validateSourceCase(source, warmCompiler);
   rows.push(...await runTinybenchRows(source, warmCompiler));
 
-  if (matchesFilter("tswasm cold createCompiler+compile", options.filter)) {
+  if (shouldRunRow(source, "tswasm cold createCompiler+compile")) {
     rows.push(await runFixedSampleRow(
       source,
       "tswasm cold createCompiler+compile",
@@ -167,7 +169,7 @@ for (const source of sourceCases) {
     ));
   }
 
-  if (!options.skipNative && matchesFilter("tsgo native CLI (process+files)", options.filter)) {
+  if (!options.skipNative && shouldRunRow(source, "tsgo native CLI (process+files)")) {
     rows.push(await runFixedSampleRow(
       source,
       "tsgo native CLI (process+files)",
@@ -175,11 +177,11 @@ for (const source of sourceCases) {
     ));
   }
 
-  if (options.includeInternals && !options.skipNative && matchesFilter("tswasm native helper compile (same Go path)", options.filter)) {
+  if (options.includeInternals && !options.skipNative && shouldRunRow(source, "tswasm native helper compile (same Go path)")) {
     rows.push(runNativeHelperRow(source));
   }
 
-  if (options.includeInternals && !options.skipNative && matchesFilter("tswasm native helper from Node (process+files)", options.filter)) {
+  if (options.includeInternals && !options.skipNative && shouldRunRow(source, "tswasm native helper from Node (process+files)")) {
     rows.push(await runFixedSampleRow(
       source,
       "tswasm native helper from Node (process+files)",
@@ -413,7 +415,7 @@ async function runTinybenchRows(source: SourceCase, compiler: Compiler): Promise
   ];
 
   for (const task of tasks) {
-    if (matchesFilter(task.name, options.filter)) {
+    if (shouldRunRow(source, task.name)) {
       bench.add(task.name, task.run, { async: false });
     }
   }
@@ -724,9 +726,53 @@ function printSummary(allRows: BenchRow[]) {
     }
     console.log(`## ${groupName}`);
     console.log("");
-    console.log(markdownTable(rows));
-    console.log("");
+    for (const category of categorizeRows(rows)) {
+      if (category.rows.length === 0) {
+        continue;
+      }
+      console.log(`### ${category.name}`);
+      console.log("");
+      console.log(category.description);
+      console.log("");
+      console.log(markdownTable(category.rows));
+      console.log("");
+    }
   }
+}
+
+function categorizeRows(rows: BenchRow[]): BenchCategory[] {
+  return [
+    {
+      name: "Portable full compile",
+      description: "These rows typecheck and emit, and can run in the same wasm-capable environments as tswasm.",
+      rows: rows.filter((row) => [
+        "tswasm warm compile",
+        "tswasm cold createCompiler+compile",
+        "TypeScript JS full program (in-memory)",
+        "ts-morph full program (in-memory)",
+      ].includes(row.name)),
+    },
+    {
+      name: "Emit-only baseline",
+      description: "This classic TypeScript JS row emits without typechecking. It is useful, but not apples-to-apples.",
+      rows: rows.filter((row) => row.name === "TypeScript JS transpileModule (emit only)"),
+    },
+    {
+      name: "tswasm internals",
+      description: "Profile-only rows that explain where Go wasm time is going.",
+      rows: rows.filter((row) => row.name.startsWith("tswasm ") && ![
+        "tswasm warm compile",
+        "tswasm cold createCompiler+compile",
+        "tswasm native helper compile (same Go path)",
+        "tswasm native helper from Node (process+files)",
+      ].includes(row.name)),
+    },
+    {
+      name: "Native Go curiosity",
+      description: "These rows require native Go or a native helper process. If native Go is available, use it; these are not portable wasm-environment comparisons.",
+      rows: rows.filter((row) => row.name.includes("native") || row.name.includes("tsgo")),
+    },
+  ];
 }
 
 function markdownTable(rows: BenchRow[]) {
@@ -794,6 +840,11 @@ function readTsgoVersion() {
 function matchesFilter(value: string, filter: string) {
   if (!filter) return true;
   return value.toLowerCase().includes(filter.toLowerCase());
+}
+
+function shouldRunRow(source: SourceCase, rowName: string) {
+  if (!options.filter) return true;
+  return matchesFilter(source.name, options.filter) || matchesFilter(rowName, options.filter);
 }
 
 function slug(value: string) {

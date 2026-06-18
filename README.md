@@ -57,7 +57,9 @@ The benchmark has two source cases:
   mapped type key remapping, template literal types, and generic call-site
   inference.
 
-The rows are intentionally not all equivalent:
+The rows are grouped by comparison category. The first category is the main one:
+portable full compile, where every row typechecks and emits and can run in the
+same wasm-capable environments as `tswasm`.
 
 - `tswasm warm compile`: one shared `createCompiler()` result for the whole
   process; timed work is only `compiler.compile(code)`.
@@ -66,13 +68,14 @@ The rows are intentionally not all equivalent:
   because the public API has no disposal hook.
 - `TypeScript JS full program (in-memory)`: recreates an in-memory
   `ts.createProgram`, collects pre-emit diagnostics, and emits.
-- `TypeScript JS transpileModule (emit only)`: intentionally favorable baseline
-  for the classic JS compiler. It does not typecheck.
 - `ts-morph full program (in-memory)`: creates an in-memory ts-morph project,
   collects pre-emit diagnostics, and emits to memory.
+- `TypeScript JS transpileModule (emit only)`: intentionally favorable baseline
+  for the classic JS compiler. It does not typecheck.
 - `tsgo native CLI (process+files)`: runs the local native TypeScript CLI in a
   subprocess against a temp project. This includes process startup and file
-  reads/writes, so it is not equivalent to the tswasm in-memory warm path.
+  reads/writes, so it is a native-Go curiosity rather than a portable
+  wasm-environment comparison.
 
 The comparison framing follows:
 
@@ -97,27 +100,65 @@ Representative local run on 2026-06-18:
 Lower latency is better. Tinybench rows use a time-driven loop; startup-heavy
 rows use fixed samples.
 
-### Simple Snippet
+### Simple Snippet: Portable Full Compile
+
+These rows typecheck and emit, and can run in the same wasm-capable environments
+as `tswasm`.
+
+| Benchmark | mean ms | median ms | samples | vs fastest | notes |
+|---|---:|---:|---:|---:|---|
+| tswasm warm compile | 28.90 | 28.11 | 18 | fastest | rme 4.63% |
+| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 2.09x slower | fixed samples |
+| ts-morph full program (in-memory) | 75.53 | 74.58 | 10 | 2.61x slower | rme 3.99% |
+| TypeScript JS full program (in-memory) | 163.2 | 162.2 | 10 | 5.65x slower | rme 3.26% |
+
+### Simple Snippet: Emit-Only Baseline
+
+This classic TypeScript JS row emits without typechecking. It is useful, but not
+apples-to-apples.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.2819 | 0.1908 | 1774 | fastest | rme 7.55% |
-| tsgo native CLI (process+files) | 27.73 | 26.91 | 5 | 98.36x slower | fixed samples |
-| tswasm warm compile | 28.90 | 28.11 | 18 | 102.52x slower | rme 4.63% |
-| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 214.61x slower | fixed samples |
-| ts-morph full program (in-memory) | 75.53 | 74.58 | 10 | 267.90x slower | rme 3.99% |
-| TypeScript JS full program (in-memory) | 163.2 | 162.2 | 10 | 578.75x slower | rme 3.26% |
 
-### Type-Heavy Snippet
+### Simple Snippet: Native Go Curiosity
+
+These rows require native Go or a native helper process. If native Go is
+available, use it; these are not portable wasm-environment comparisons.
+
+| Benchmark | mean ms | median ms | samples | vs fastest | notes |
+|---|---:|---:|---:|---:|---|
+| tsgo native CLI (process+files) | 27.73 | 26.91 | 5 | fastest | fixed samples |
+
+### Type-Heavy Snippet: Portable Full Compile
+
+These rows typecheck and emit, and can run in the same wasm-capable environments
+as `tswasm`.
+
+| Benchmark | mean ms | median ms | samples | vs fastest | notes |
+|---|---:|---:|---:|---:|---|
+| tswasm warm compile | 24.21 | 23.53 | 21 | fastest | rme 6.99% |
+| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 2.34x slower | fixed samples |
+| ts-morph full program (in-memory) | 68.35 | 66.82 | 10 | 2.82x slower | rme 3.97% |
+| TypeScript JS full program (in-memory) | 161.9 | 157.8 | 10 | 6.69x slower | rme 4.59% |
+
+### Type-Heavy Snippet: Emit-Only Baseline
+
+This classic TypeScript JS row emits without typechecking. It is useful, but not
+apples-to-apples.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.4030 | 0.3025 | 1241 | fastest | rme 5.93% |
-| tswasm warm compile | 24.21 | 23.53 | 21 | 60.06x slower | rme 6.99% |
-| tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | 71.07x slower | fixed samples |
-| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 140.51x slower | fixed samples |
-| ts-morph full program (in-memory) | 68.35 | 66.82 | 10 | 169.59x slower | rme 3.97% |
-| TypeScript JS full program (in-memory) | 161.9 | 157.8 | 10 | 401.77x slower | rme 4.59% |
+
+### Type-Heavy Snippet: Native Go Curiosity
+
+These rows require native Go or a native helper process. If native Go is
+available, use it; these are not portable wasm-environment comparisons.
+
+| Benchmark | mean ms | median ms | samples | vs fastest | notes |
+|---|---:|---:|---:|---:|---|
+| tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | fastest | fixed samples |
 
 ## Upstream Layout
 
