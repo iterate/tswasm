@@ -178,6 +178,16 @@ for (const source of sourceCases) {
   if (options.includeInternals && !options.skipNative && matchesFilter("tswasm native helper compile (same Go path)", options.filter)) {
     rows.push(runNativeHelperRow(source));
   }
+
+  if (options.includeInternals && !options.skipNative && matchesFilter("tswasm native helper from Node (process+files)", options.filter)) {
+    rows.push(await runFixedSampleRow(
+      source,
+      "tswasm native helper from Node (process+files)",
+      () => {
+        runNativeHelperFromNode(source);
+      },
+    ));
+  }
 }
 
 if (options.includeInternals && !options.skipNative && matchesFilter("tsgo native CLI --version (spawn only)", options.filter)) {
@@ -601,6 +611,48 @@ function runNativeHelperRow(source: SourceCase): BenchRow {
     rme: null,
     method: "fixed-samples",
   };
+}
+
+function runNativeHelperFromNode(source: SourceCase) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), `tswasm-native-node-${slug(source.name)}-`));
+  temporaryDirectories.push(directory);
+  const inputPath = path.join(directory, source.fileName);
+  const configPath = path.join(directory, "tsconfig.json");
+
+  writeFileSync(inputPath, source.code);
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2024",
+          module: "ESNext",
+          strict: true,
+          skipLibCheck: true,
+          sourceMap: false,
+          declaration: false,
+        },
+        files: [source.fileName],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  execFileSync(
+    tswasmNativeBenchBinary,
+    [
+      "--file",
+      inputPath,
+      "--fileName",
+      source.fileName,
+      "--iterations",
+      "1",
+    ],
+    {
+      stdio: "pipe",
+    },
+  );
 }
 
 function assertTswasmResult(result: CompileResult) {

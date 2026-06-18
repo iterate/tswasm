@@ -150,6 +150,20 @@ Interpretation: the wasm path is not slower because of JS/Go boundary chatter.
 For these snippets, Go wasm execution itself is roughly 5x slower than the same
 one-file compiler path built as native Go.
 
+Added another row, `tswasm native helper from Node (process+files)`, that writes
+the source file and a small `tsconfig.json` from Node, spawns the same-path
+native helper, and asks the helper to run one compile.
+
+Quick profile result:
+
+- simple `tswasm native helper from Node (process+files)`: about 15.5ms;
+- type-heavy `tswasm native helper from Node (process+files)`: about 14.0ms;
+- same run Go wasm warm compile: about 26.5ms simple and 23.0ms type-heavy.
+
+Interpretation: even when Node pays file writes plus helper process startup, the
+same compile path as native Go remains materially faster than the Go wasm warm
+path for these snippets. The remaining gap is not explained by Node file setup.
+
 ## 2026-06-18 SingleThreaded experiment
 
 Added a profile-only row, `tswasm warm compile (SingleThreaded=false)`, that
