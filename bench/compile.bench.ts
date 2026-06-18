@@ -741,11 +741,13 @@ function printSummary(allRows: BenchRow[]) {
 }
 
 function categorizeRows(rows: BenchRow[]): BenchCategory[] {
-  const warmRows = rows.filter((row) => [
+  const tswasmWarmRows = rows.filter((row) => row.name === "tswasm warm compile");
+  const tswasmReferenceRows = rows.filter((row) => [
     "tswasm warm compile",
     "tswasm cold createCompiler+compile",
   ].includes(row.name));
   const emitOnlyRows = rows.filter((row) => row.name === "TypeScript JS transpileModule (emit only)");
+  const fullTypeScriptRows = rows.filter((row) => row.name === "TypeScript JS full program (in-memory)");
   const nativeRows = rows.filter((row) => row.name.includes("native") || row.name.includes("tsgo"));
 
   return [
@@ -761,10 +763,11 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
     },
     {
       name: "Emit-only baseline",
-      description: "This classic TypeScript JS row emits without typechecking. It is useful, but not apples-to-apples. tswasm rows are repeated here as reference points.",
+      description: "This classic TypeScript JS row emits without typechecking. It is useful, but not apples-to-apples. tswasm warm compile and TypeScript JS full program are repeated here as reference points.",
       rows: emitOnlyRows.length === 0 ? [] : [
         ...emitOnlyRows,
-        ...warmRows,
+        ...tswasmWarmRows,
+        ...fullTypeScriptRows,
       ],
     },
     {
@@ -782,22 +785,23 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
       description: "These rows require native Go or a native helper process. If native Go is available, use it; these are not portable wasm-environment comparisons. tswasm rows are repeated here as reference points.",
       rows: nativeRows.length === 0 ? [] : [
         ...nativeRows,
-        ...warmRows,
+        ...tswasmReferenceRows,
       ],
     },
   ];
 }
 
 function markdownTable(rows: BenchRow[]) {
-  const fastest = Math.min(...rows.map((row) => row.meanMs));
+  const sortedRows = [...rows].sort((a, b) => a.meanMs - b.meanMs);
+  const fastest = sortedRows[0].meanMs;
   const lines = [
     "| Benchmark | mean ms | median ms | samples | vs fastest | notes |",
     "|---|---:|---:|---:|---:|---|",
   ];
 
-  for (const row of [...rows].sort((a, b) => a.meanMs - b.meanMs)) {
+  for (const [index, row] of sortedRows.entries()) {
     const ratio = row.meanMs / fastest;
-    const vs = ratio < 1.005 ? "fastest" : `${ratio.toFixed(2)}x slower`;
+    const vs = index === 0 ? "fastest" : formatRelativeSpeed(ratio);
     const notes = row.method === "fixed-samples"
       ? "fixed samples"
       : row.rme === null
@@ -809,6 +813,13 @@ function markdownTable(rows: BenchRow[]) {
   }
 
   return lines.join("\n");
+}
+
+function formatRelativeSpeed(ratio: number) {
+  if (ratio < 1.005) {
+    return "within 0.5%";
+  }
+  return `${ratio.toFixed(2)}x slower`;
 }
 
 function writeJsonOutput(allRows: BenchRow[], filePath: string) {

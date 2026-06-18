@@ -115,13 +115,14 @@ as `tswasm`.
 ### Simple Snippet: Emit-Only Baseline
 
 This classic TypeScript JS row emits without typechecking. It is useful, but not
-apples-to-apples. The `tswasm` rows are repeated here as reference points.
+apples-to-apples. `tswasm` warm compile and TypeScript JS full program are
+repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.2819 | 0.1908 | 1774 | fastest | rme 7.55% |
 | tswasm warm compile | 28.90 | 28.11 | 18 | 102.52x slower | rme 4.63% |
-| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 214.65x slower | fixed samples |
+| TypeScript JS full program (in-memory) | 163.2 | 162.2 | 10 | 579.0x slower | rme 3.26% |
 
 ### Simple Snippet: Native Go Curiosity
 
@@ -150,13 +151,14 @@ as `tswasm`.
 ### Type-Heavy Snippet: Emit-Only Baseline
 
 This classic TypeScript JS row emits without typechecking. It is useful, but not
-apples-to-apples. The `tswasm` rows are repeated here as reference points.
+apples-to-apples. `tswasm` warm compile and TypeScript JS full program are
+repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.4030 | 0.3025 | 1241 | fastest | rme 5.93% |
 | tswasm warm compile | 24.21 | 23.53 | 21 | 60.07x slower | rme 6.99% |
-| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 140.52x slower | fixed samples |
+| TypeScript JS full program (in-memory) | 161.9 | 157.8 | 10 | 401.7x slower | rme 4.59% |
 
 ### Type-Heavy Snippet: Native Go Curiosity
 
@@ -166,8 +168,8 @@ available, use it; these are not portable wasm-environment comparisons. The
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
-| tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | fastest | fixed samples |
 | tswasm warm compile | 24.21 | 23.53 | 21 | fastest | rme 6.99% |
+| tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | 1.18x slower | fixed samples |
 | tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 2.34x slower | fixed samples |
 
 ## Upstream Layout
