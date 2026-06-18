@@ -115,20 +115,25 @@ as `tswasm`.
 ### Simple Snippet: Emit-Only Baseline
 
 This classic TypeScript JS row emits without typechecking. It is useful, but not
-apples-to-apples.
+apples-to-apples. The `tswasm` rows are repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.2819 | 0.1908 | 1774 | fastest | rme 7.55% |
+| tswasm warm compile | 28.90 | 28.11 | 18 | 102.52x slower | rme 4.63% |
+| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 214.65x slower | fixed samples |
 
 ### Simple Snippet: Native Go Curiosity
 
 These rows require native Go or a native helper process. If native Go is
-available, use it; these are not portable wasm-environment comparisons.
+available, use it; these are not portable wasm-environment comparisons. The
+`tswasm` rows are repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | tsgo native CLI (process+files) | 27.73 | 26.91 | 5 | fastest | fixed samples |
+| tswasm warm compile | 28.90 | 28.11 | 18 | 1.04x slower | rme 4.63% |
+| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 2.18x slower | fixed samples |
 
 ### Type-Heavy Snippet: Portable Full Compile
 
@@ -145,20 +150,25 @@ as `tswasm`.
 ### Type-Heavy Snippet: Emit-Only Baseline
 
 This classic TypeScript JS row emits without typechecking. It is useful, but not
-apples-to-apples.
+apples-to-apples. The `tswasm` rows are repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | TypeScript JS transpileModule (emit only) | 0.4030 | 0.3025 | 1241 | fastest | rme 5.93% |
+| tswasm warm compile | 24.21 | 23.53 | 21 | 60.07x slower | rme 6.99% |
+| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 140.52x slower | fixed samples |
 
 ### Type-Heavy Snippet: Native Go Curiosity
 
 These rows require native Go or a native helper process. If native Go is
-available, use it; these are not portable wasm-environment comparisons.
+available, use it; these are not portable wasm-environment comparisons. The
+`tswasm` rows are repeated here as reference points.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
 | tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | fastest | fixed samples |
+| tswasm warm compile | 24.21 | 23.53 | 21 | fastest | rme 6.99% |
+| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 2.34x slower | fixed samples |
 
 ## Upstream Layout
 

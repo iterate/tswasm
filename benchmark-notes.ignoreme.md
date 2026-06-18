@@ -147,6 +147,12 @@ Changed benchmark output and README tables to group comparisons by relevance:
 Also fixed `--filter` so it can match either source names, such as
 `type-heavy`, or row names, such as `warm`.
 
+Follow-up adjustment: emit-only and native curiosity tables now repeat
+`tswasm warm compile` and `tswasm cold createCompiler+compile` as reference
+rows. Those comparisons are not the main decision criteria, but showing the
+reference rows makes the magnitude visible without forcing readers to jump
+between tables.
+
 ## 2026-06-18 same-path native helper
 
 Added `go/tswasm-native-bench/main.go` as a benchmark-only native helper. The

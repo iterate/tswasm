@@ -741,6 +741,13 @@ function printSummary(allRows: BenchRow[]) {
 }
 
 function categorizeRows(rows: BenchRow[]): BenchCategory[] {
+  const warmRows = rows.filter((row) => [
+    "tswasm warm compile",
+    "tswasm cold createCompiler+compile",
+  ].includes(row.name));
+  const emitOnlyRows = rows.filter((row) => row.name === "TypeScript JS transpileModule (emit only)");
+  const nativeRows = rows.filter((row) => row.name.includes("native") || row.name.includes("tsgo"));
+
   return [
     {
       name: "Portable full compile",
@@ -754,8 +761,11 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
     },
     {
       name: "Emit-only baseline",
-      description: "This classic TypeScript JS row emits without typechecking. It is useful, but not apples-to-apples.",
-      rows: rows.filter((row) => row.name === "TypeScript JS transpileModule (emit only)"),
+      description: "This classic TypeScript JS row emits without typechecking. It is useful, but not apples-to-apples. tswasm rows are repeated here as reference points.",
+      rows: emitOnlyRows.length === 0 ? [] : [
+        ...emitOnlyRows,
+        ...warmRows,
+      ],
     },
     {
       name: "tswasm internals",
@@ -769,8 +779,11 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
     },
     {
       name: "Native Go curiosity",
-      description: "These rows require native Go or a native helper process. If native Go is available, use it; these are not portable wasm-environment comparisons.",
-      rows: rows.filter((row) => row.name.includes("native") || row.name.includes("tsgo")),
+      description: "These rows require native Go or a native helper process. If native Go is available, use it; these are not portable wasm-environment comparisons. tswasm rows are repeated here as reference points.",
+      rows: nativeRows.length === 0 ? [] : [
+        ...nativeRows,
+        ...warmRows,
+      ],
     },
   ];
 }
