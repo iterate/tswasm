@@ -30,6 +30,7 @@ interface BenchOptions {
   json: string;
   quick: boolean;
   skipNative: boolean;
+  includeInternals: boolean;
   time: number;
   warmupTime: number;
   iterations: number;
@@ -169,6 +170,16 @@ for (const source of sourceCases) {
   }
 }
 
+if (options.includeInternals && !options.skipNative && matchesFilter("tsgo native CLI --version (spawn only)", options.filter)) {
+  rows.push(await runFixedSampleRow(
+    { name: "process overhead", fileName: "none.ts", code: "" },
+    "tsgo native CLI --version (spawn only)",
+    () => {
+      execFileSync(tsgoBinary, ["--version"], { stdio: "pipe" });
+    },
+  ));
+}
+
 printSummary(rows);
 
 if (options.json) {
@@ -181,6 +192,7 @@ function readOptions(): BenchOptions {
       filter: { type: "string", default: "" },
       json: { type: "string", default: "" },
       quick: { type: "boolean", default: false },
+      "include-internals": { type: "boolean", default: false },
       "skip-native": { type: "boolean", default: false },
       time: { type: "string", default: "" },
       "fixed-samples": { type: "string", default: "" },
@@ -200,6 +212,7 @@ function readOptions(): BenchOptions {
     json: values.json,
     quick,
     skipNative: values["skip-native"],
+    includeInternals: values["include-internals"],
     time,
     warmupTime: quick ? 50 : 150,
     iterations: quick ? 3 : 10,
@@ -249,7 +262,63 @@ async function runTinybenchRows(source: SourceCase, compiler: Compiler): Promise
     throws: true,
   });
 
+  const internalTasks = options.includeInternals
+    ? [
+        {
+          name: "tswasm JSON round trip (no compile)",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "roundTrip",
+            } as any));
+          },
+        },
+        {
+          name: "tswasm standard libs only",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "standardLibraryFiles",
+            } as any));
+          },
+        },
+        {
+          name: "tswasm program setup only",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "programSetup",
+            } as any));
+          },
+        },
+        {
+          name: "tswasm diagnostics only",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "diagnosticsOnly",
+            } as any));
+          },
+        },
+        {
+          name: "tswasm emit only",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "emitOnly",
+            } as any));
+          },
+        },
+      ]
+    : [];
+
   const tasks = [
+    ...internalTasks,
     {
       name: "tswasm warm compile",
       run: () => {
@@ -495,12 +564,13 @@ function printSummary(allRows: BenchRow[]) {
   console.log("Lower latency is better. Tinybench rows use a time-driven loop; startup-heavy rows use fixed samples.");
   console.log("");
 
-  for (const source of sourceCases) {
-    const rows = allRows.filter((row) => row.group === source.name);
+  const groupNames = [...new Set(allRows.map((row) => row.group))];
+  for (const groupName of groupNames) {
+    const rows = allRows.filter((row) => row.group === groupName);
     if (rows.length === 0) {
       continue;
     }
-    console.log(`## ${source.name}`);
+    console.log(`## ${groupName}`);
     console.log("");
     console.log(markdownTable(rows));
     console.log("");

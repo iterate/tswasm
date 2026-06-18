@@ -32,8 +32,9 @@ const (
 var standardLibs embed.FS
 
 type compileRequest struct {
-	Code     string `json:"code"`
-	FileName string `json:"fileName"`
+	Code          string `json:"code"`
+	FileName      string `json:"fileName"`
+	BenchmarkMode string `json:"benchmarkMode"`
 }
 
 type compileResult struct {
@@ -99,6 +100,12 @@ func compileCode(request compileRequest) (result compileResult) {
 	if !strings.HasPrefix(inputFile, "/") {
 		inputFile = "/" + inputFile
 	}
+	if request.BenchmarkMode == "roundTrip" {
+		return compileResult{
+			JS:      request.Code,
+			Success: true,
+		}
+	}
 
 	sourceFiles, fileNames, err := standardLibraryFiles()
 	if err != nil {
@@ -108,6 +115,12 @@ func compileCode(request compileRequest) (result compileResult) {
 				Category: diagnostics.CategoryError.Name(),
 			}},
 			Success: false,
+		}
+	}
+	if request.BenchmarkMode == "standardLibraryFiles" {
+		return compileResult{
+			JS:      strings.Join(fileNames, "\n"),
+			Success: true,
 		}
 	}
 	sourceFiles[inputFile] = request.Code
@@ -145,19 +158,32 @@ func compileCode(request compileRequest) (result compileResult) {
 			Success: false,
 		}
 	}
+	if request.BenchmarkMode == "programSetup" {
+		return compileResult{
+			JS:      inputFile,
+			Success: true,
+		}
+	}
 
 	ctx := context.Background()
-	rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
-		ctx,
-		program,
-		sourceFile,
-		false,
-		program.GetBindDiagnostics,
-		program.GetSemanticDiagnostics,
-	)
-	result.Diagnostics = formatDiagnostics(rawDiagnostics)
-	if hasError(result.Diagnostics) {
-		return result
+	if request.BenchmarkMode != "emitOnly" {
+		rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
+			ctx,
+			program,
+			sourceFile,
+			false,
+			program.GetBindDiagnostics,
+			program.GetSemanticDiagnostics,
+		)
+		result.Diagnostics = formatDiagnostics(rawDiagnostics)
+		if hasError(result.Diagnostics) {
+			return result
+		}
+		if request.BenchmarkMode == "diagnosticsOnly" {
+			result.JS = inputFile
+			result.Success = true
+			return result
+		}
 	}
 
 	var jsText string

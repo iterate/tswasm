@@ -21,6 +21,7 @@
     "build": "pnpm run build:wasm && pnpm run build:js",
     "bench": "pnpm run build && tsx bench/compile.bench.ts",
     "bench:quick": "pnpm run build && tsx bench/compile.bench.ts --quick",
+    "bench:profile": "pnpm run build && tsx bench/compile.bench.ts --quick --include-internals",
     "test": "pnpm run build && vitest run test"
   },
   "devDependencies": {
