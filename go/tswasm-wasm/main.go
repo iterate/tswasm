@@ -151,10 +151,14 @@ func compileCode(request compileRequest) (result compileResult) {
 		},
 	}
 	host := compiler.NewCompilerHost(currentDirectory, newInlineFS(sourceFiles), currentDirectory, nil, nil)
+	singleThreaded := core.TSTrue
+	if request.BenchmarkMode == "parallelProgram" {
+		singleThreaded = core.TSFalse
+	}
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:         config,
 		Host:           host,
-		SingleThreaded: core.TSTrue,
+		SingleThreaded: singleThreaded,
 	})
 	sourceFile := findSourceFile(program, inputFile)
 	if sourceFile == nil {

@@ -342,6 +342,16 @@ async function runTinybenchRows(source: SourceCase, compiler: Compiler): Promise
           },
         },
         {
+          name: "tswasm warm compile (SingleThreaded=false)",
+          run: () => {
+            assertTswasmResult(compiler.compile({
+              code: source.code,
+              fileName: source.fileName,
+              benchmarkMode: "parallelProgram",
+            } as any));
+          },
+        },
+        {
           name: "tswasm diagnostics only",
           run: () => {
             assertTswasmResult(compiler.compile({

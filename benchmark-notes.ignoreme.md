@@ -149,3 +149,21 @@ Quick profile result:
 Interpretation: the wasm path is not slower because of JS/Go boundary chatter.
 For these snippets, Go wasm execution itself is roughly 5x slower than the same
 one-file compiler path built as native Go.
+
+## 2026-06-18 SingleThreaded experiment
+
+Added a profile-only row, `tswasm warm compile (SingleThreaded=false)`, that
+sets `compiler.ProgramOptions.SingleThreaded` to `core.TSFalse` for the wasm
+compile.
+
+Quick profile result:
+
+- simple default `SingleThreaded=true`: about 26.4ms;
+- simple `SingleThreaded=false`: about 31.6ms;
+- type-heavy default `SingleThreaded=true`: about 23.3ms;
+- type-heavy `SingleThreaded=false`: about 28.7ms.
+
+Interpretation: do not disable `SingleThreaded` for the current Go wasm path.
+In this environment it adds overhead and does not create useful parallelism.
+Revisit only with a different runtime that supports real wasm threads, a
+multi-file/project workload, or evidence from the native-preview APIs.
