@@ -23,7 +23,7 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
       lib: "bundled TypeScript lib.es2024.d.ts",
     },
   });
-  expect(result.js).toContain("/* tswasm: typescript-go wasm emitted this file */");
+  expect(result.js).not.toContain("tswasm");
   expect(result.js).toContain("async function value");
 });
 

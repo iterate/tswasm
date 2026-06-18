@@ -26,7 +26,6 @@ import (
 const (
 	currentDirectory = "/"
 	defaultInputFile = "/input.ts"
-	outputBanner     = "/* tswasm: typescript-go wasm emitted this file */\n"
 )
 
 //go:embed libs/*.d.ts
@@ -176,7 +175,7 @@ func compileCode(request compileRequest) (result compileResult) {
 		return result
 	}
 
-	result.JS = outputBanner + jsText
+	result.JS = jsText
 	result.Success = true
 	return result
 }
