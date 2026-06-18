@@ -19,10 +19,14 @@
     "build:wasm": "tsx scripts/build-wasm.ts",
     "build:js": "tsc -p tsconfig.json",
     "build": "pnpm run build:wasm && pnpm run build:js",
+    "bench": "pnpm run build && tsx bench/compile.bench.ts",
+    "bench:quick": "pnpm run build && tsx bench/compile.bench.ts --quick",
     "test": "pnpm run build && vitest run test"
   },
   "devDependencies": {
     "@types/node": "^24.10.2",
+    "tinybench": "^6.0.2",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"
