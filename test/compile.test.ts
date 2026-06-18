@@ -23,8 +23,16 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
       lib: "bundled TypeScript lib.es2024.d.ts",
     },
   });
-  expect(result.js).not.toContain("tswasm");
-  expect(result.js).toContain("async function value");
+  expect(result.js).toMatchInlineSnapshot(`
+    ""use strict";
+    async function value(input) {
+        const doubled = Array.from(input, item => item * 2).toSorted((a, b) => a - b);
+        const values = new Map();
+        values.set(doubled.length, Promise.resolve(doubled.at(-1) || 0));
+        return Promise.all(values.values());
+    }
+    "
+  `);
 });
 
 test("returns TypeScript diagnostics", async () => {
