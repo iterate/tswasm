@@ -93,3 +93,37 @@ Observed on Apple M4 Max / Node v26.0.0:
 Interpretation: reducing JSON boundary crossings is unlikely to be the main
 performance win for the current one-shot API. The large fixed costs are program
 construction and compiler work inside Go wasm.
+
+## 2026-06-18 cache pass
+
+Implemented a safe standard-library string cache in `go/tswasm-wasm/main.go`:
+
+- embedded lib files are read/stringified once per wasm runtime;
+- each compile still receives a fresh map and file-name slice so programs do not
+  share mutable file collections;
+- profile result after the change dropped `tswasm standard libs only` from about
+  0.38ms to about 0.03-0.05ms;
+- the subsequent full run was cleaner than the original baseline, but the
+  profile rows still show the direct cache win is sub-ms and not the dominant
+  cost.
+
+I checked the upstream compiler host path. `compiler.NewCompilerHost` reparses
+source text on demand; `internal/project` has a parse-cache host, but reusing
+parsed source files across one-shot programs is a larger design change because
+source-file identity and program/binder/checker mutation need to be understood.
+Do not do that as a casual micro-optimization.
+
+Full post-cache command:
+
+```bash
+pnpm exec tsx bench/compile.bench.ts --json=tasks/compiler-benchmarks-results-after-cache.ignoreme.json
+```
+
+Representative post-cache full run:
+
+- simple `tswasm warm compile`: 28.90ms mean, versus `tsgo native CLI
+  (process+files)` at 27.73ms;
+- type-heavy `tswasm warm compile`: 24.21ms mean, versus `tsgo native CLI
+  (process+files)` at 28.64ms;
+- simple `tswasm cold createCompiler+compile`: 60.51ms mean;
+- type-heavy `tswasm cold createCompiler+compile`: 56.63ms mean.

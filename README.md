@@ -39,13 +39,15 @@ API:
 ```bash
 pnpm bench
 pnpm bench:quick
+pnpm bench:profile
 pnpm exec tsx bench/compile.bench.ts --filter=warm
 pnpm exec tsx bench/compile.bench.ts --skip-native --json=tasks/bench-results.ignoreme.json
 ```
 
 `pnpm bench` builds `tswasm`, builds a local native `tsgo` CLI from
 `typescript-go/`, and then prints Markdown tables. `bench:quick` uses shorter
-sample windows for iteration while changing benchmark code.
+sample windows for iteration while changing benchmark code. `bench:profile`
+adds internal diagnostic rows for the wasm path and a spawn-only `tsgo` row.
 
 The benchmark has two source cases:
 
@@ -99,23 +101,23 @@ rows use fixed samples.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
-| TypeScript JS transpileModule (emit only) | 0.6198 | 0.3674 | 807 | fastest | rme 10.91% |
-| tsgo native CLI (process+files) | 52.40 | 44.92 | 5 | 84.54x slower | fixed samples |
-| tswasm warm compile | 53.92 | 50.42 | 10 | 86.99x slower | rme 17.35% |
-| tswasm cold createCompiler+compile | 108.6 | 113.3 | 5 | 175.27x slower | fixed samples |
-| ts-morph full program (in-memory) | 141.0 | 123.8 | 10 | 227.42x slower | rme 18.43% |
-| TypeScript JS full program (in-memory) | 236.6 | 227.7 | 10 | 381.73x slower | rme 8.14% |
+| TypeScript JS transpileModule (emit only) | 0.2819 | 0.1908 | 1774 | fastest | rme 7.55% |
+| tsgo native CLI (process+files) | 27.73 | 26.91 | 5 | 98.36x slower | fixed samples |
+| tswasm warm compile | 28.90 | 28.11 | 18 | 102.52x slower | rme 4.63% |
+| tswasm cold createCompiler+compile | 60.51 | 60.86 | 5 | 214.61x slower | fixed samples |
+| ts-morph full program (in-memory) | 75.53 | 74.58 | 10 | 267.90x slower | rme 3.99% |
+| TypeScript JS full program (in-memory) | 163.2 | 162.2 | 10 | 578.75x slower | rme 3.26% |
 
 ### Type-Heavy Snippet
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
-| TypeScript JS transpileModule (emit only) | 0.6128 | 0.4635 | 823 | fastest | rme 6.64% |
-| tsgo native CLI (process+files) | 32.88 | 32.18 | 5 | 53.67x slower | fixed samples |
-| tswasm warm compile | 38.68 | 37.64 | 13 | 63.12x slower | rme 10.30% |
-| tswasm cold createCompiler+compile | 82.90 | 72.54 | 5 | 135.28x slower | fixed samples |
-| ts-morph full program (in-memory) | 96.48 | 95.83 | 10 | 157.46x slower | rme 6.23% |
-| TypeScript JS full program (in-memory) | 297.4 | 259.7 | 10 | 485.43x slower | rme 19.44% |
+| TypeScript JS transpileModule (emit only) | 0.4030 | 0.3025 | 1241 | fastest | rme 5.93% |
+| tswasm warm compile | 24.21 | 23.53 | 21 | 60.06x slower | rme 6.99% |
+| tsgo native CLI (process+files) | 28.64 | 27.41 | 5 | 71.07x slower | fixed samples |
+| tswasm cold createCompiler+compile | 56.63 | 56.72 | 5 | 140.51x slower | fixed samples |
+| ts-morph full program (in-memory) | 68.35 | 66.82 | 10 | 169.59x slower | rme 3.97% |
+| TypeScript JS full program (in-memory) | 161.9 | 157.8 | 10 | 401.77x slower | rme 4.59% |
 
 ## Upstream Layout
 

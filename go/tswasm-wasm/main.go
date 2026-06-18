@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"syscall/js"
 	"time"
 
@@ -30,6 +31,13 @@ const (
 
 //go:embed libs/*.d.ts
 var standardLibs embed.FS
+
+var standardLibraryCache struct {
+	once        sync.Once
+	sourceFiles map[string]string
+	fileNames   []string
+	err         error
+}
 
 type compileRequest struct {
 	Code          string `json:"code"`
@@ -207,9 +215,25 @@ func compileCode(request compileRequest) (result compileResult) {
 }
 
 func standardLibraryFiles() (map[string]string, []string, error) {
+	standardLibraryCache.once.Do(loadStandardLibraryFiles)
+	if standardLibraryCache.err != nil {
+		return nil, nil, standardLibraryCache.err
+	}
+
+	sourceFiles := make(map[string]string, len(standardLibraryCache.sourceFiles)+1)
+	for fileName, contents := range standardLibraryCache.sourceFiles {
+		sourceFiles[fileName] = contents
+	}
+	fileNames := slices.Clone(standardLibraryCache.fileNames)
+
+	return sourceFiles, fileNames, nil
+}
+
+func loadStandardLibraryFiles() {
 	entries, err := standardLibs.ReadDir("libs")
 	if err != nil {
-		return nil, nil, err
+		standardLibraryCache.err = err
+		return
 	}
 
 	sourceFiles := make(map[string]string, len(entries)+1)
@@ -221,7 +245,8 @@ func standardLibraryFiles() (map[string]string, []string, error) {
 
 		contents, err := standardLibs.ReadFile("libs/" + entry.Name())
 		if err != nil {
-			return nil, nil, err
+			standardLibraryCache.err = err
+			return
 		}
 
 		fileName := "/" + entry.Name()
@@ -230,7 +255,8 @@ func standardLibraryFiles() (map[string]string, []string, error) {
 	}
 	slices.Sort(fileNames)
 
-	return sourceFiles, fileNames, nil
+	standardLibraryCache.sourceFiles = sourceFiles
+	standardLibraryCache.fileNames = fileNames
 }
 
 func findSourceFile(program *compiler.Program, fileName string) *ast.SourceFile {
