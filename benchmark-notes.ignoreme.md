@@ -89,6 +89,10 @@ Observed on Apple M4 Max / Node v26.0.0:
   same ballpark as full warm compile.
 - `tsgo native CLI --version (spawn only)`: roughly 9.8ms. Subprocess startup is
   material, but not enough to explain the whole tsgo-vs-tswasm relationship.
+- Later profile-only row `tswasm native helper compile (same Go path)` measured
+  the same one-file compile shape inside native Go at roughly 5ms for both
+  snippets. That is much faster than Go wasm's roughly 25-28ms warm compile, so
+  native-vs-wasm execution is a major factor.
 
 Interpretation: reducing JSON boundary crossings is unlikely to be the main
 performance win for the current one-shot API. The large fixed costs are program
@@ -127,3 +131,21 @@ Representative post-cache full run:
   (process+files)` at 28.64ms;
 - simple `tswasm cold createCompiler+compile`: 60.51ms mean;
 - type-heavy `tswasm cold createCompiler+compile`: 56.63ms mean.
+
+## 2026-06-18 same-path native helper
+
+Added `go/tswasm-native-bench/main.go` as a benchmark-only native helper. The
+runner copies it into `typescript-go/cmd/tswasm-native-bench`, copies the same
+embedded libs used by the wasm command, builds it natively, and asks the helper
+to time compile iterations inside the Go process.
+
+Quick profile result:
+
+- simple `tswasm native helper compile (same Go path)`: about 5.0ms;
+- type-heavy `tswasm native helper compile (same Go path)`: about 4.9ms;
+- simple Go wasm warm compile in the same run: about 27.8ms;
+- type-heavy Go wasm warm compile in the same run: about 26.6ms.
+
+Interpretation: the wasm path is not slower because of JS/Go boundary chatter.
+For these snippets, Go wasm execution itself is roughly 5x slower than the same
+one-file compiler path built as native Go.

@@ -1,9 +1,11 @@
 #!/usr/bin/env tsx
 import { execFileSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -54,6 +56,7 @@ interface BenchRow {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const typescriptGoRoot = path.join(repoRoot, "typescript-go");
 const tsgoBinary = path.join(repoRoot, "dist", "bench-tsgo");
+const tswasmNativeBenchBinary = path.join(repoRoot, "dist", "bench-tswasm-native");
 const temporaryDirectories: string[] = [];
 
 process.once("exit", cleanupTemporaryDirectories);
@@ -137,6 +140,9 @@ if (!existsSync(path.join(repoRoot, "dist", "index.js"))) {
 
 if (!options.skipNative) {
   buildTsgoBinary();
+  if (options.includeInternals) {
+    buildTswasmNativeBenchBinary();
+  }
 }
 
 const warmCompiler = await createCompiler();
@@ -167,6 +173,10 @@ for (const source of sourceCases) {
       "tsgo native CLI (process+files)",
       createTsgoCliRunner(source),
     ));
+  }
+
+  if (options.includeInternals && !options.skipNative && matchesFilter("tswasm native helper compile (same Go path)", options.filter)) {
+    rows.push(runNativeHelperRow(source));
   }
 }
 
@@ -233,6 +243,43 @@ function buildTsgoBinary() {
       "-o",
       tsgoBinary,
       "./cmd/tsgo",
+    ],
+    {
+      cwd: typescriptGoRoot,
+      stdio: "pipe",
+    },
+  );
+}
+
+function buildTswasmNativeBenchBinary() {
+  const sourceDir = path.join(repoRoot, "go", "tswasm-native-bench");
+  const buildDir = path.join(typescriptGoRoot, "cmd", "tswasm-native-bench");
+  const sourceLibDir = path.join(typescriptGoRoot, "cmd", "tswasm-wasm", "libs");
+  const buildLibDir = path.join(buildDir, "libs");
+
+  if (!existsSync(sourceLibDir)) {
+    throw new Error("tswasm wasm libs are missing. Run `pnpm run build` before profiling.");
+  }
+
+  rmSync(buildDir, { recursive: true, force: true });
+  mkdirSync(buildLibDir, { recursive: true });
+  copyFileSync(path.join(sourceDir, "main.go"), path.join(buildDir, "main.go"));
+  for (const fileName of readdirSync(sourceLibDir)) {
+    if (fileName.endsWith(".d.ts")) {
+      copyFileSync(path.join(sourceLibDir, fileName), path.join(buildLibDir, fileName));
+    }
+  }
+
+  execFileSync(
+    "go",
+    [
+      "build",
+      "-trimpath",
+      "-buildvcs=false",
+      "-ldflags=-s -w -buildid=",
+      "-o",
+      tswasmNativeBenchBinary,
+      "./cmd/tswasm-native-bench",
     ],
     {
       cwd: typescriptGoRoot,
@@ -500,6 +547,49 @@ function createTsgoCliRunner(source: SourceCase): () => void {
       cwd: directory,
       stdio: "pipe",
     });
+  };
+}
+
+function runNativeHelperRow(source: SourceCase): BenchRow {
+  const directory = mkdtempSync(path.join(os.tmpdir(), `tswasm-native-${slug(source.name)}-`));
+  temporaryDirectories.push(directory);
+  const inputPath = path.join(directory, source.fileName);
+  writeFileSync(inputPath, source.code);
+
+  const output = execFileSync(
+    tswasmNativeBenchBinary,
+    [
+      "--file",
+      inputPath,
+      "--fileName",
+      source.fileName,
+      "--iterations",
+      String(options.fixedSamples),
+    ],
+    {
+      encoding: "utf8",
+    },
+  );
+  const summary = JSON.parse(output) as {
+    samples: number;
+    meanMs: number;
+    medianMs: number;
+    minMs: number;
+    maxMs: number;
+    hz: number;
+  };
+
+  return {
+    group: source.name,
+    name: "tswasm native helper compile (same Go path)",
+    samples: summary.samples,
+    meanMs: summary.meanMs,
+    medianMs: summary.medianMs,
+    minMs: summary.minMs,
+    maxMs: summary.maxMs,
+    hz: summary.hz,
+    rme: null,
+    method: "fixed-samples",
   };
 }
 
