@@ -16,13 +16,11 @@ ECMAScript lib definitions and returns diagnostics plus emitted JavaScript.
 import { createCompiler } from "tswasm";
 
 const compiler = await createCompiler();
-const result = compiler.compile(`
-  async function main(): Promise<number> {
-    return 42;
-  }
-`);
+const result = compiler.compile(`const main = (): Promise<number> => 42`);
 
-console.log(result.js);
+console.log(result.js); // const main = () => 42;
+
+compiler.compile(`const s: string = 42`) // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
 
 ## Development
