@@ -26,10 +26,17 @@
     "bench:quick": "pnpm run build && tsx bench/compile.bench.ts --quick",
     "bench:profile": "pnpm run build && tsx bench/compile.bench.ts --quick --include-internals",
     "size": "pnpm run build && tsx scripts/size-report.ts",
-    "test": "pnpm run build && vitest run test"
+    "test": "pnpm run build && vitest run test",
+    "test:browser": "pnpm run build && TSWASM_BROWSER_TEST=1 vitest run test/browser.test.ts",
+    "test:cloudflare": "pnpm run build && vitest run test/cloudflare-worker.test.ts",
+    "test:expo": "pnpm run build && TSWASM_EXPO_TEST=1 vitest run test/expo.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.10.2",
+    "esbuild": "^0.28.1",
+    "execa": "^9.6.1",
+    "miniflare": "^4.20260617.0",
+    "playwright": "^1.61.0",
     "tinybench": "^6.0.2",
     "ts-morph": "^28.0.0",
     "tsx": "^4.20.6",

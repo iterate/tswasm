@@ -69,7 +69,7 @@ declare global {
 export async function createCompiler(
   options: CreateCompilerOptions = {}
 ): Promise<Compiler> {
-  const wasm = options.wasm || new URL("./tswasm.wasm", import.meta.url);
+  const wasm = options.wasm || defaultWasmUrl();
   const nativeCompile = await createNativeCompile(wasm);
 
   return {
@@ -84,6 +84,39 @@ export async function createCompiler(
       };
     },
   };
+}
+
+function defaultWasmUrl(): URL {
+  // Keep module-url syntax out of this module so Metro-style classic script
+  // bundles can parse the package when callers provide options.wasm.
+  const stack = new Error().stack || "";
+  const urlMatch = stack.match(/(?:file|https?):\/\/[^\s)]+\/index\.js(?::\d+:\d+)?/u);
+  if (urlMatch) {
+    return new URL("./tswasm.wasm", urlMatch[0].replace(/:\d+:\d+$/u, ""));
+  }
+
+  const pathMatch = stack.match(/(?:\/|[A-Za-z]:\\)[^\s)]+[/\\]index\.js(?::\d+:\d+)?/u);
+  const nodeUrl = nodeBuiltin("url") as Pick<typeof import("node:url"), "pathToFileURL"> | undefined;
+  if (pathMatch && nodeUrl?.pathToFileURL) {
+    return new URL("./tswasm.wasm", nodeUrl.pathToFileURL(pathMatch[0].replace(/:\d+:\d+$/u, "")));
+  }
+
+  const nodeProcess = globalThis.process as NodeJS.Process | undefined;
+  const nodeFs = nodeBuiltin("fs") as Pick<typeof import("node:fs"), "existsSync"> | undefined;
+  const nodePath = nodeBuiltin("path") as Pick<typeof import("node:path"), "join"> | undefined;
+  if (nodeProcess?.cwd && nodeUrl?.pathToFileURL && nodeFs?.existsSync && nodePath?.join) {
+    const repoLocalWasm = nodePath.join(nodeProcess.cwd(), "dist", "tswasm.wasm");
+    if (nodeFs.existsSync(repoLocalWasm)) {
+      return nodeUrl.pathToFileURL(repoLocalWasm);
+    }
+  }
+
+  const location = globalThis.location;
+  if (location?.href) {
+    return new URL("./tswasm.wasm", location.href);
+  }
+
+  throw new Error("createCompiler requires options.wasm when tswasm.wasm cannot be resolved automatically");
 }
 
 async function createNativeCompile(
@@ -128,9 +161,9 @@ async function instantiateWasm(
 }
 
 async function readWasmBytes(input: URL | string): Promise<ArrayBuffer> {
-  const url = input instanceof URL ? input : new URL(input, import.meta.url);
+  const url = resolveWasmUrl(input);
   if (url.protocol === "file:") {
-    const { readFile } = await import("node:fs/promises");
+    const { readFile } = await importNodeFsPromises();
     const bytes = await readFile(url);
     return bytes.buffer.slice(
       bytes.byteOffset,
@@ -143,4 +176,33 @@ async function readWasmBytes(input: URL | string): Promise<ArrayBuffer> {
     throw new Error(`failed to load tswasm wasm: ${response.status}`);
   }
   return response.arrayBuffer();
+}
+
+function resolveWasmUrl(input: URL | string): URL {
+  if (input instanceof URL) {
+    return input;
+  }
+
+  try {
+    return new URL(input);
+  } catch {
+    return new URL(input, defaultWasmUrl());
+  }
+}
+
+async function importNodeFsPromises(): Promise<typeof import("node:fs/promises")> {
+  const fs = nodeBuiltin("fs") as typeof import("node:fs") | undefined;
+  if (!fs?.promises?.readFile) {
+    throw new Error("file: wasm URLs require Node.js process.getBuiltinModule('fs')");
+  }
+  return fs.promises;
+}
+
+function nodeBuiltin(name: string): unknown {
+  const nodeProcess = globalThis.process as
+    | (NodeJS.Process & {
+        getBuiltinModule?: (name: string) => unknown;
+      })
+    | undefined;
+  return nodeProcess?.getBuiltinModule?.(name);
 }
