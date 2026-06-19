@@ -13,14 +13,14 @@ ECMAScript lib definitions and returns diagnostics plus emitted JavaScript.
 ## Usage
 
 ```ts
-import { createCompiler } from "tswasm";
+import { createCompiler } from 'tswasm'
 
-const compiler = await createCompiler();
-const result = compiler.compile(`const main = (): Promise<number> => 42`);
+const ts = await createCompiler()
+const result = ts.compile('const x: number = 123')
 
-console.log(result.js); // const main = () => 42;
+console.log(result.success) // true
 
-compiler.compile(`const s: string = 42`) // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
+ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
 
 ## Development
@@ -62,7 +62,7 @@ portable full compile, where every row typechecks and emits and can run in the
 same wasm-capable environments as `tswasm`.
 
 - `tswasm warm compile`: one shared `createCompiler()` result for the whole
-  process; timed work is only `compiler.compile(code)`.
+  process; timed work is only `ts.compile(code)`.
 - `tswasm cold createCompiler+compile`: timed work includes `createCompiler()`
   and one compile. Repeated samples currently accumulate Go wasm runtimes
   because the public API has no disposal hook.

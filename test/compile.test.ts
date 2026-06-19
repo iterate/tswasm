@@ -3,8 +3,8 @@ import { expect, test } from "vitest";
 import { createCompiler } from "../dist/index.js";
 
 test("compiles an in-memory TypeScript string with native tsgo wasm", async () => {
-  const compiler = await createCompiler();
-  const result = compiler.compile(`
+  const ts = await createCompiler();
+  const result = ts.compile(`
     async function value(input: Iterable<number>): Promise<number[]> {
       const doubled = Array.from(input, item => item * 2).toSorted((a, b) => a - b);
       const values = new Map<number, Promise<number>>();
@@ -36,8 +36,8 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
 });
 
 test("returns TypeScript diagnostics", async () => {
-  const compiler = await createCompiler();
-  const result = compiler.compile(`const value: number = "nope";`);
+  const ts = await createCompiler();
+  const result = ts.compile(`const value: number = "nope";`);
 
   expect(result).toMatchObject({
     success: false,
