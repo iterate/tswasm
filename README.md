@@ -23,15 +23,71 @@ console.log(result.success) // true
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
 
-## Development
+## Why
+
+If a compiler needs to run in a browser, Cloudflare Worker, or another
+JavaScript runtime where native subprocesses are not available, the practical
+implementation choices are JavaScript or WebAssembly. Native `tsgo` is the
+obvious choice when native code is allowed, but it does not cover those
+environments.
+
+That matters because TypeScript is moving toward the native compiler and
+language service for TypeScript 7.0. The TypeScript team describes the native
+port as a way to improve raw performance, memory use, and parallelism:
+<https://devblogs.microsoft.com/typescript/progress-on-typescript-7-december-2025/>.
+TypeScript 6.0 is also explicitly a transition release for TypeScript 7.0:
+<https://www.typescriptlang.org/docs/handbook/release-notes/typescript-6-0.html>.
+Microsoft says the existing JavaScript/TypeScript implementation will be
+maintained for the foreseeable future, but that the eventual intent is to
+develop only the native codebase:
+<https://github.com/microsoft/typescript-go/discussions/454>.
+
+`tswasm` explores the practical middle ground: keep the supported native
+compiler path available in wasm-capable environments, and measure whether that
+path is also faster than the JavaScript compiler APIs those environments can
+use today.
+
+## Size
+
+This repo includes a size report for the current package contents:
 
 ```bash
-pnpm install
-pnpm run build
-pnpm test
+pnpm size
 ```
 
-## Benchmarks
+The script builds `tswasm`, runs `npm pack --dry-run --json`, rejects
+benchmark-only native binaries if they would be packed, and prints raw,
+gzip, and brotli sizes for the runtime assets. The local JS compiler reference
+rows are direct local package/file sizes, not full browser bundle graphs.
+
+Representative local run on 2026-06-19:
+
+### Packed Package
+
+| Package | packed tarball | unpacked install | files |
+|---|---:|---:|---:|
+| tswasm@0.0.0 | 6.82 MiB | 28.99 MiB | 6 |
+
+### Runtime Assets
+
+| Asset | raw | gzip | brotli |
+|---|---:|---:|---:|
+| API JS | 2.34 KiB | 927 B | 792 B |
+| Types | 1.19 KiB | 490 B | 397 B |
+| Go wasm runtime JS | 16.76 KiB | 4.33 KiB | 3.73 KiB |
+| TypeScript Go wasm | 28.96 MiB | 6.81 MiB | 5.15 MiB |
+| Runtime payload total | 28.98 MiB | 6.82 MiB | 5.15 MiB |
+
+### Local JS Compiler References
+
+| Reference | raw/install | gzip | brotli |
+|---|---:|---:|---:|
+| TypeScript JS compiler file | 8.69 MiB | 1.56 MiB | 1.10 MiB |
+| TypeScript JS package | 22.53 MiB | - | - |
+| ts-morph bundled JS | 932.10 KiB | 127.57 KiB | 97.12 KiB |
+| ts-morph package | 1.41 MiB | - | - |
+
+## Performance
 
 This repo includes a local benchmark runner for the current one-file compiler
 API:
@@ -182,3 +238,11 @@ available, use it; these are not portable wasm-environment comparisons. The
 
 That keeps the public package separate from upstream while still allowing the Go
 entrypoint to reach tsgo's current internal compiler APIs.
+
+## Development
+
+```bash
+pnpm install
+pnpm run build
+pnpm test
+```

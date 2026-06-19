@@ -12,7 +12,10 @@
     }
   },
   "files": [
-    "dist",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/tswasm.wasm",
+    "dist/wasm_exec.js",
     "README.md"
   ],
   "scripts": {
@@ -22,6 +25,7 @@
     "bench": "pnpm run build && tsx bench/compile.bench.ts",
     "bench:quick": "pnpm run build && tsx bench/compile.bench.ts --quick",
     "bench:profile": "pnpm run build && tsx bench/compile.bench.ts --quick --include-internals",
+    "size": "pnpm run build && tsx scripts/size-report.ts",
     "test": "pnpm run build && vitest run test"
   },
   "devDependencies": {
