@@ -34,6 +34,7 @@ test("createCompiler works in a real browser", { timeout: 60_000 }, async () => 
 
   expect(await fixture.stub.compile('const value: number = "nope";')).toMatchObject({
     success: false,
+    js: expect.stringContaining('const value = "nope";'),
     diagnostics: [
       {
         code: 2322,

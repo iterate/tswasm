@@ -188,12 +188,9 @@ func compileCode(request compileRequest) (result compileResult) {
 			program.GetSemanticDiagnostics,
 		)
 		result.Diagnostics = formatDiagnostics(rawDiagnostics)
-		if hasError(result.Diagnostics) {
-			return result
-		}
 		if request.BenchmarkMode == "diagnosticsOnly" {
 			result.JS = inputFile
-			result.Success = true
+			result.Success = !hasError(result.Diagnostics)
 			return result
 		}
 	}
@@ -209,12 +206,12 @@ func compileCode(request compileRequest) (result compileResult) {
 		},
 	})
 	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics)...)
-	if hasError(result.Diagnostics) || emitResult.EmitSkipped {
+	if emitResult.EmitSkipped {
 		return result
 	}
 
 	result.JS = jsText
-	result.Success = true
+	result.Success = !hasError(result.Diagnostics)
 	return result
 }
 

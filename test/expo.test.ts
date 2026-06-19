@@ -45,6 +45,7 @@ test("createCompiler works in a real Expo web app", { timeout: 180_000 }, async 
 
   expect(await fixture.stub.compileError()).toMatchObject({
     success: false,
+    js: expect.stringContaining('const value = "nope";'),
     diagnostics: [
       {
         code: 2322,

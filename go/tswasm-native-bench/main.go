@@ -182,6 +182,7 @@ func compileCode(request compileRequest) (result compileResult) {
 	}
 
 	ctx := context.Background()
+	hasErrors := false
 	if request.BenchmarkMode != "emitOnly" {
 		rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
 			ctx,
@@ -191,17 +192,12 @@ func compileCode(request compileRequest) (result compileResult) {
 			program.GetBindDiagnostics,
 			program.GetSemanticDiagnostics,
 		)
-		if hasDiagnosticError(rawDiagnostics) {
-			return compileResult{
-				Diagnostics: formatDiagnostics(rawDiagnostics),
-				Success:     false,
-			}
-		}
+		hasErrors = hasDiagnosticError(rawDiagnostics)
+		result.Diagnostics = formatDiagnostics(rawDiagnostics)
 		if request.BenchmarkMode == "diagnosticsOnly" {
-			return compileResult{
-				JS:      inputFile,
-				Success: true,
-			}
+			result.JS = inputFile
+			result.Success = !hasErrors
+			return result
 		}
 	}
 
@@ -215,17 +211,17 @@ func compileCode(request compileRequest) (result compileResult) {
 			return nil
 		},
 	})
-	if hasDiagnosticError(emitResult.Diagnostics) || emitResult.EmitSkipped {
-		return compileResult{
-			Diagnostics: formatDiagnostics(emitResult.Diagnostics),
-			Success:     false,
-		}
+	if hasDiagnosticError(emitResult.Diagnostics) {
+		hasErrors = true
+	}
+	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics)...)
+	if emitResult.EmitSkipped {
+		return result
 	}
 
-	return compileResult{
-		JS:      jsText,
-		Success: true,
-	}
+	result.JS = jsText
+	result.Success = !hasErrors
+	return result
 }
 
 func standardLibraryFiles() (map[string]string, []string, error) {

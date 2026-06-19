@@ -40,6 +40,7 @@ test("createCompiler works in a Miniflare Worker", async () => {
 
   expect(await fixture.fetchJson(compilePath('const value: number = "nope";'))).toMatchObject({
     success: false,
+    js: expect.stringContaining('const value = "nope";'),
     diagnostics: [
       {
         code: 2322,
@@ -115,6 +116,7 @@ test("createCompiler works inside a Miniflare Durable Object", async () => {
 
   expect(await fixture.fetchJson(compilePath('const value: number = "nope";'))).toMatchObject({
     success: false,
+    js: expect.stringContaining('const value = "nope";'),
     diagnostics: [
       {
         code: 2322,

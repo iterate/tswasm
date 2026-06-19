@@ -41,6 +41,7 @@ test("returns TypeScript diagnostics", async () => {
 
   expect(result).toMatchObject({
     success: false,
+    js: expect.any(String),
     diagnostics: [
       {
         code: 2322,
@@ -51,4 +52,9 @@ test("returns TypeScript diagnostics", async () => {
       },
     ],
   });
+  expect(result.js).toMatchInlineSnapshot(`
+    ""use strict";
+    const value = "nope";
+    "
+  `);
 });

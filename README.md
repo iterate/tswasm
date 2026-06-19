@@ -34,6 +34,7 @@ const ts = await createCompiler()
 const result = ts.compile('const x: number = 123')
 
 console.log(result.success) // true
+console.log(result.js) // "const x = 123"
 
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
