@@ -100,21 +100,36 @@ function copyWasmExecRuntime() {
   }).trim();
   const runtimePath = path.join(outputDir, "wasm_exec.js");
   copyFileSync(path.join(goRoot, "lib", "wasm", "wasm_exec.js"), runtimePath);
-  patchWorkerSafeEntropy(runtimePath);
+  patchRuntimeEntropy(runtimePath);
 }
 
-function patchWorkerSafeEntropy(filePath: string) {
-  const original = "crypto.getRandomValues(loadSlice(sp + 8));";
-  const replacement = `const target = loadSlice(sp + 8);
-\t\t\t\t\t\tlet seed = 0x12345678;
-\t\t\t\t\t\tfor (let i = 0; i < target.length; i++) {
-\t\t\t\t\t\t\tseed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-\t\t\t\t\t\t\ttarget[i] = seed & 0xff;
-\t\t\t\t\t\t}`;
+function patchRuntimeEntropy(filePath: string) {
+  const original = `\tif (!globalThis.crypto) {
+\t\tthrow new Error("globalThis.crypto is not available, polyfill required (crypto.getRandomValues only)");
+\t}
+`;
+  const replacement = `\tif (!globalThis.crypto?.getRandomValues) {
+\t\tconst nodeCrypto = globalThis.process?.getBuiltinModule?.("crypto");
+\t\tif (nodeCrypto?.webcrypto?.getRandomValues) {
+\t\t\tglobalThis.crypto = nodeCrypto.webcrypto;
+\t\t} else {
+\t\t\tlet seed = 0x12345678;
+\t\t\tglobalThis.crypto = {
+\t\t\t\tgetRandomValues(target) {
+\t\t\t\t\tfor (let i = 0; i < target.length; i++) {
+\t\t\t\t\t\tseed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+\t\t\t\t\t\ttarget[i] = seed & 0xff;
+\t\t\t\t\t}
+\t\t\t\t\treturn target;
+\t\t\t\t},
+\t\t\t};
+\t\t}
+\t}
+`;
 
   const runtime = readFileSync(filePath, "utf8");
   if (!runtime.includes(original)) {
-    throw new Error("Go wasm_exec.js entropy hook changed; update build script");
+    throw new Error("Go wasm_exec.js crypto guard changed; update build script");
   }
 
   writeFileSync(filePath, runtime.replace(original, replacement));

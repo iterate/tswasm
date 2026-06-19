@@ -1,16 +1,31 @@
 # tswasm
 
-Proof of concept for packaging `typescript-go` as an embeddable wasm compiler.
+Alpha package for running the TypeScript Go compiler from JavaScript runtimes
+through WebAssembly.
 
 This repository keeps `microsoft/typescript-go` as a git subtree, then builds a
 small wasm command from inside that subtree. Building from inside the upstream Go
 module lets the command legally import `typescript-go/internal/...` without
 patching upstream compiler packages.
 
-The initial API compiles one in-memory TypeScript file, `/input.ts`, with modern
-ECMAScript lib definitions and returns diagnostics plus emitted JavaScript.
+The current API compiles one in-memory TypeScript file, `/input.ts` by default,
+with modern ECMAScript lib definitions and returns diagnostics plus emitted
+JavaScript.
+
+`tswasm` is published as an alpha. The package is useful for experiments,
+browser-side tools, Cloudflare Worker prototypes, and performance comparisons,
+but the API is intentionally narrow while `typescript-go` is still moving.
+
+## Install
+
+```bash
+npm install tswasm
+```
 
 ## Usage
+
+When the JavaScript file and `tswasm.wasm` asset are served from the same
+package location, `createCompiler()` loads the packaged wasm automatically:
 
 ```ts
 import { createCompiler } from 'tswasm'
@@ -22,6 +37,52 @@ console.log(result.success) // true
 
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
+
+For bundlers and worker runtimes, pass the wasm module or URL explicitly:
+
+```ts
+import { createCompiler } from 'tswasm'
+import wasm from 'tswasm/tswasm.wasm'
+
+let tsPromise: ReturnType<typeof createCompiler>
+
+function getCompiler() {
+  tsPromise ||= createCompiler({ wasm })
+  return tsPromise
+}
+
+export default {
+  async fetch(request: Request) {
+    const code = new URL(request.url).searchParams.get('code') || 'const x = 1'
+    const ts = await getCompiler()
+    return Response.json(ts.compile(code))
+  },
+}
+```
+
+If the runtime serves wasm as a normal static file, compile it yourself and pass
+the `WebAssembly.Module`:
+
+```ts
+import { createCompiler } from 'tswasm'
+
+const bytes = await fetch('/tswasm.wasm').then(response => response.arrayBuffer())
+const wasm = await WebAssembly.compile(bytes)
+const ts = await createCompiler({ wasm })
+```
+
+## Current Limits
+
+- Compiles one in-memory input file per call. Pass `fileName` when diagnostics
+  should use a path other than `/input.ts`.
+- Uses bundled `lib.es2024.d.ts` files, `strict: true`, `target: ES2024`, and
+  `module: ESNext`.
+- Does not load a `tsconfig.json`, file graph, package dependencies, or custom
+  declaration files yet.
+- Has no disposal API. Reusing one `createCompiler()` result is cheaper than
+  repeatedly creating new runtimes.
+- Ships a large wasm payload: about 29 MiB raw and about 6.8 MiB compressed in
+  the current package.
 
 ## Why
 
@@ -66,17 +127,17 @@ Representative local run on 2026-06-19:
 
 | Package | packed tarball | unpacked install | files |
 |---|---:|---:|---:|
-| tswasm@0.0.0 | 6.82 MiB | 28.99 MiB | 6 |
+| tswasm@0.1.0-alpha.0 | 6.84 MiB | 29.05 MiB | 10 |
 
 ### Runtime Assets
 
 | Asset | raw | gzip | brotli |
 |---|---:|---:|---:|
-| API JS | 2.34 KiB | 927 B | 792 B |
+| API JS | 4.17 KiB | 1.45 KiB | 1.25 KiB |
 | Types | 1.19 KiB | 490 B | 397 B |
-| Go wasm runtime JS | 16.76 KiB | 4.33 KiB | 3.73 KiB |
+| Go wasm runtime JS | 16.93 KiB | 4.40 KiB | 3.79 KiB |
 | TypeScript Go wasm | 28.96 MiB | 6.81 MiB | 5.15 MiB |
-| Runtime payload total | 28.98 MiB | 6.82 MiB | 5.15 MiB |
+| Runtime payload total | 28.98 MiB | 6.82 MiB | 5.16 MiB |
 
 ### Local JS Compiler References
 
@@ -245,4 +306,21 @@ entrypoint to reach tsgo's current internal compiler APIs.
 pnpm install
 pnpm run build
 pnpm test
+```
+
+## Release Checks
+
+```bash
+pnpm run release:check
+```
+
+The release check builds the wasm and JavaScript output, runs the default Vitest
+suite, prints the package size report, and runs `npm pack --dry-run --json`.
+That default suite includes the Node and Miniflare Worker tests. Run these
+additional environment checks before claiming browser or Expo web support for a
+release:
+
+```bash
+pnpm test:browser
+pnpm test:expo
 ```
