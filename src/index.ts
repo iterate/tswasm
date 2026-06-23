@@ -8,6 +8,13 @@ export interface CompileRequest {
 
 export type SourceFileMap = Record<string, string>;
 
+export interface CompileProjectRequest {
+  files: SourceFileMap;
+  tsconfig?: string;
+  typeRoots?: string[];
+  cwd?: string;
+}
+
 export interface CompileResult {
   js: string;
   outputs: Record<string, string>;
@@ -35,7 +42,7 @@ export interface CompilerInfo {
 export interface Compiler {
   compile(code: string): CompileResult;
   compile(request: CompileRequest): CompileResult;
-  compile(files: SourceFileMap): CompileResult;
+  compile(request: CompileProjectRequest): CompileResult;
 }
 
 export interface CreateCompilerOptions {
@@ -79,7 +86,7 @@ export async function createCompiler(
   const nativeCompile = await createNativeCompile(wasm);
 
   return {
-    compile(input: string | CompileRequest | SourceFileMap) {
+    compile(input: string | CompileRequest | CompileProjectRequest) {
       const request = normalizeCompileInput(input);
       const nativeResult = JSON.parse(
         nativeCompile(JSON.stringify(request))
@@ -92,7 +99,9 @@ export async function createCompiler(
   };
 }
 
-function normalizeCompileInput(input: string | CompileRequest | SourceFileMap) {
+function normalizeCompileInput(
+  input: string | CompileRequest | CompileProjectRequest
+) {
   if (typeof input === "string") {
     return { code: input };
   }
@@ -101,7 +110,7 @@ function normalizeCompileInput(input: string | CompileRequest | SourceFileMap) {
     return input;
   }
 
-  return { files: input };
+  return input;
 }
 
 function defaultWasmUrl(): URL {

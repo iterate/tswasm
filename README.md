@@ -9,7 +9,7 @@ module lets the command legally import `typescript-go/internal/...` without
 patching upstream compiler packages.
 
 The current API compiles either one in-memory TypeScript file, `/input.ts` by
-default, or a virtual in-memory project described by a source-file map. It uses
+default, or a virtual in-memory project request with a source-file map. It uses
 modern ECMAScript lib definitions and returns diagnostics plus emitted
 JavaScript.
 
@@ -40,36 +40,85 @@ console.log(result.js) // "const x = 123"
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
 ```
 
-For multiple files, pass a source-file map. Relative imports resolve inside the
-same virtual filesystem, and emitted JavaScript is returned by output file name:
+For multiple files, pass a project request with `files`. Relative imports
+resolve inside the same virtual filesystem, and emitted JavaScript is returned
+by output file name:
 
 ```ts
 import { createCompiler } from 'tswasm'
 
 const ts = await createCompiler()
 const result = ts.compile({
-  'src/a.ts': 'export const aa = 1',
-  'src/b.ts': "import { aa } from './a'\n\nexport const bb = aa + 0.5",
+  files: {
+    'src/a.ts': 'export const aa = 1',
+    'src/b.ts': "import { aa } from './a'\n\nexport const bb = aa + 0.5",
+  },
 })
 
 console.log(result.outputs['src/b.js']) // "import { aa } from './a';\nexport const bb = aa + 0.5;\n"
 ```
 
-If the file map contains `tsconfig.json`, `tswasm` parses that virtual config
-with TypeScript Go's config parser. It never discovers or reads a real
-`tsconfig.json` from the host filesystem:
+Pass `tsconfig` as JSON text when the virtual project needs config-selected
+files or compiler options. `tswasm` parses that virtual config with TypeScript
+Go's config parser. It never discovers or reads a real `tsconfig.json` from the
+host filesystem:
 
 ```ts
 const result = ts.compile({
-  'tsconfig.json': JSON.stringify({
+  cwd: '/app',
+  tsconfig: JSON.stringify({
     compilerOptions: { module: 'CommonJS' },
     files: ['src/index.ts'],
   }),
-  'src/value.ts': 'export const value = 41',
-  'src/index.ts': "import { value } from './value'\n\nexport const answer = value + 1",
+  files: {
+    'src/value.ts': 'export const value = 41',
+    'src/index.ts': "import { value } from './value'\n\nexport const answer = value + 1",
+  },
 })
 
 console.log(result.outputs['src/index.js']) // CommonJS emit
+```
+
+The project `cwd` defaults to `/`. Relative file names, `tsconfig` `files` and
+`include` entries, default `node_modules/@types` lookup, and relative
+`typeRoots` are resolved from that virtual current directory. Dependencies can
+be supplied by adding their package files to the same `files` map:
+
+```ts
+const result = ts.compile({
+  cwd: '/app',
+  tsconfig: JSON.stringify({
+    compilerOptions: {
+      moduleResolution: 'Bundler',
+      types: ['custom'],
+    },
+    files: ['src/index.ts'],
+  }),
+  files: {
+    'src/index.ts': "import { external } from 'pkg'\n\nexport const value = external + typedValue",
+    'node_modules/pkg/package.json': JSON.stringify({ name: 'pkg', types: 'index.d.ts' }),
+    'node_modules/pkg/index.d.ts': 'export const external: number',
+    'node_modules/@types/custom/index.d.ts': 'declare const typedValue: number',
+  },
+})
+```
+
+Prefer putting `typeRoots` in `tsconfig`. The top-level `typeRoots` option is an
+override for hosts that need to set those roots without editing the config JSON:
+
+```ts
+ts.compile({
+  cwd: '/app',
+  typeRoots: ['types'],
+  tsconfig: JSON.stringify({
+    compilerOptions: { types: ['custom'] },
+    files: ['src/index.ts'],
+  }),
+  files: {
+    'src/index.ts': 'typedValue.toFixed()',
+    'types/custom/index.d.ts': 'declare const typedValue: number',
+  },
+})
 ```
 
 For bundlers and worker runtimes, pass the wasm module or URL explicitly:
@@ -108,14 +157,14 @@ const ts = await createCompiler({ wasm })
 ## Current Limits
 
 - Compiles in-memory input only. Pass a string or `{ code, fileName }` for one
-  file, or a source-file map for a virtual project.
+  file, or `{ files, tsconfig, typeRoots, cwd }` for a virtual project.
 - Without a virtual `tsconfig.json`, uses bundled `lib.es2024.d.ts` files,
   `strict: true`, `target: ES2024`, and `module: ESNext`.
-- Supports a virtual `tsconfig.json` supplied in the source-file map. It can
+- Supports virtual `tsconfig` JSON text supplied in the project request. It can
   select files and compiler options through TypeScript Go's parser, but the
   bundled ES2024 lib set still comes from the package.
 - Does not load package dependencies, `node_modules`, real host files, or
-  declaration files that are not supplied in the source-file map.
+  declaration files that are not supplied in the project `files` map.
 - Has no disposal API. Reusing one `createCompiler()` result is cheaper than
   repeatedly creating new runtimes.
 - Ships a large wasm payload: about 29 MiB raw and about 6.8 MiB compressed in

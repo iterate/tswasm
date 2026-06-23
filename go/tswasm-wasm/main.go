@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	currentDirectory = "/"
-	defaultInputFile = "/input.ts"
+	defaultCurrentDirectory = "/"
+	defaultInputFile        = "/input.ts"
 )
 
 //go:embed libs/*.d.ts
@@ -40,9 +40,12 @@ var standardLibraryCache struct {
 }
 
 type compileRequest struct {
-	Code     string            `json:"code"`
-	FileName string            `json:"fileName"`
-	Files    map[string]string `json:"files"`
+	Code      string            `json:"code"`
+	FileName  string            `json:"fileName"`
+	Files     map[string]string `json:"files"`
+	TSConfig  string            `json:"tsconfig"`
+	TypeRoots []string          `json:"typeRoots"`
+	Cwd       string            `json:"cwd"`
 }
 
 type compileResult struct {
@@ -119,7 +122,8 @@ func compileCode(request compileRequest) (result compileResult) {
 		}
 	}
 
-	config, targetFile, singleInput, requestDiagnostics := prepareCompileConfig(request, sourceFiles, fileNames)
+	cwd := normalizeCurrentDirectory(request.Cwd)
+	config, targetFile, singleInput, requestDiagnostics := prepareCompileConfig(request, sourceFiles, fileNames, cwd)
 	if len(requestDiagnostics) > 0 {
 		return compileResult{
 			Outputs:     map[string]string{},
@@ -128,7 +132,7 @@ func compileCode(request compileRequest) (result compileResult) {
 		}
 	}
 
-	host := compiler.NewCompilerHost(currentDirectory, newInlineFS(sourceFiles), currentDirectory, nil, nil)
+	host := compiler.NewCompilerHost(cwd, newInlineFS(sourceFiles), defaultCurrentDirectory, nil, nil)
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:         config,
 		Host:           host,
@@ -158,20 +162,20 @@ func compileCode(request compileRequest) (result compileResult) {
 		program.GetBindDiagnostics,
 		program.GetSemanticDiagnostics,
 	)
-	result.Diagnostics = formatDiagnostics(rawDiagnostics)
+	result.Diagnostics = formatDiagnostics(rawDiagnostics, cwd)
 
 	outputs := map[string]string{}
 	emitResult := program.Emit(ctx, compiler.EmitOptions{
 		TargetSourceFile: targetSourceFile,
 		WriteFile: func(fileName string, text string, data *compiler.WriteFileData) error {
 			if strings.HasSuffix(fileName, ".js") {
-				outputs[toResultFileName(fileName)] = text
+				outputs[toResultFileName(fileName, cwd)] = text
 			}
 			return nil
 		},
 	})
 	result.Outputs = outputs
-	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics)...)
+	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics, cwd)...)
 	if emitResult.EmitSkipped {
 		return result
 	}
@@ -190,15 +194,17 @@ func prepareCompileConfig(
 	request compileRequest,
 	sourceFiles map[string]string,
 	standardLibraryFileNames []string,
+	cwd string,
 ) (*tsoptions.ParsedCommandLine, string, bool, []compileDiagnostic) {
 	if request.Files == nil {
-		inputFile := normalizeInputFileName(request.FileName)
+		inputFile := normalizeInputFileName(request.FileName, defaultCurrentDirectory)
 		sourceFiles[inputFile] = request.Code
 		fileNames := append(slices.Clone(standardLibraryFileNames), inputFile)
 		return newParsedCommandLine(defaultCompilerOptions(), fileNames), inputFile, true, nil
 	}
 
 	userFileNames := make([]string, 0, len(request.Files))
+	configFileName := normalizeInputFileName("tsconfig.json", cwd)
 	for fileName, contents := range request.Files {
 		if fileName == "" {
 			return nil, "", false, []compileDiagnostic{{
@@ -206,19 +212,25 @@ func prepareCompileConfig(
 				Category: diagnostics.CategoryError.Name(),
 			}}
 		}
-		normalized := normalizeInputFileName(fileName)
+		normalized := normalizeInputFileName(fileName, cwd)
 		sourceFiles[normalized] = contents
-		if normalized != "/tsconfig.json" {
+		if isRootSourceFile(normalized, configFileName) {
 			userFileNames = append(userFileNames, normalized)
 		}
 	}
 	slices.Sort(userFileNames)
 
-	configFileContents, hasConfig := sourceFiles["/tsconfig.json"]
+	configFileContents := request.TSConfig
+	hasConfig := configFileContents != ""
 	if hasConfig {
-		configFileName := "/tsconfig.json"
-		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles)
+		sourceFiles[configFileName] = configFileContents
+	} else {
+		configFileContents, hasConfig = sourceFiles[configFileName]
+	}
+	if hasConfig {
+		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles, cwd)
 		applyCompilerDefaults(config.ParsedConfig.CompilerOptions)
+		applyRequestTypeRoots(config.ParsedConfig.CompilerOptions, request.TypeRoots, cwd)
 		config.ParsedConfig.FileNames = mergeFileNames(standardLibraryFileNames, config.ParsedConfig.FileNames)
 		return config, "", false, nil
 	}
@@ -231,7 +243,9 @@ func prepareCompileConfig(
 	}
 
 	fileNames := mergeFileNames(standardLibraryFileNames, userFileNames)
-	return newParsedCommandLine(defaultCompilerOptions(), fileNames), "", false, nil
+	options := defaultCompilerOptions()
+	applyRequestTypeRoots(options, request.TypeRoots, cwd)
+	return newParsedCommandLine(options, fileNames), "", false, nil
 }
 
 func defaultCompilerOptions() *core.CompilerOptions {
@@ -261,6 +275,13 @@ func applyCompilerDefaults(options *core.CompilerOptions) {
 	options.SkipDefaultLibCheck = core.TSTrue
 }
 
+func applyRequestTypeRoots(options *core.CompilerOptions, typeRoots []string, cwd string) {
+	if typeRoots == nil {
+		return
+	}
+	options.TypeRoots = normalizeTypeRoots(typeRoots, cwd)
+}
+
 func newParsedCommandLine(options *core.CompilerOptions, fileNames []string) *tsoptions.ParsedCommandLine {
 	return &tsoptions.ParsedCommandLine{
 		ParsedConfig: &core.ParsedOptions{
@@ -274,15 +295,16 @@ func parseVirtualTsConfig(
 	configFileName string,
 	contents string,
 	sourceFiles map[string]string,
+	cwd string,
 ) *tsoptions.ParsedCommandLine {
 	host := &parseConfigHost{
 		fs:               newInlineFS(sourceFiles),
-		currentDirectory: currentDirectory,
+		currentDirectory: cwd,
 	}
 	configDir := tspath.GetDirectoryPath(configFileName)
 	configSourceFile := tsoptions.NewTsconfigSourceFileFromFilePath(
 		configFileName,
-		tspath.ToPath(configFileName, currentDirectory, true),
+		tspath.ToPath(configFileName, cwd, true),
 		contents,
 	)
 	return tsoptions.ParseJsonSourceFileConfigFileContent(
@@ -298,11 +320,40 @@ func parseVirtualTsConfig(
 	)
 }
 
-func normalizeInputFileName(fileName string) string {
+func normalizeCurrentDirectory(cwd string) string {
+	if cwd == "" {
+		return defaultCurrentDirectory
+	}
+	return tspath.GetNormalizedAbsolutePath(cwd, defaultCurrentDirectory)
+}
+
+func normalizeInputFileName(fileName string, cwd string) string {
 	if fileName == "" {
 		return defaultInputFile
 	}
-	return tspath.GetNormalizedAbsolutePath(fileName, currentDirectory)
+	return tspath.GetNormalizedAbsolutePath(fileName, cwd)
+}
+
+func normalizeTypeRoots(typeRoots []string, cwd string) []string {
+	normalized := make([]string, 0, len(typeRoots))
+	for _, typeRoot := range typeRoots {
+		normalized = append(normalized, tspath.GetNormalizedAbsolutePath(typeRoot, cwd))
+	}
+	return normalized
+}
+
+func isRootSourceFile(fileName string, configFileName string) bool {
+	if fileName == configFileName || strings.Contains(fileName, "/node_modules/") {
+		return false
+	}
+	return strings.HasSuffix(fileName, ".ts") ||
+		strings.HasSuffix(fileName, ".tsx") ||
+		strings.HasSuffix(fileName, ".mts") ||
+		strings.HasSuffix(fileName, ".cts") ||
+		strings.HasSuffix(fileName, ".js") ||
+		strings.HasSuffix(fileName, ".jsx") ||
+		strings.HasSuffix(fileName, ".mjs") ||
+		strings.HasSuffix(fileName, ".cjs")
 }
 
 func mergeFileNames(first []string, second []string) []string {
@@ -372,7 +423,7 @@ func findSourceFile(program *compiler.Program, fileName string) *ast.SourceFile 
 	return nil
 }
 
-func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
+func formatDiagnostics(rawDiagnostics []*ast.Diagnostic, cwd string) []compileDiagnostic {
 	formatted := make([]compileDiagnostic, 0, len(rawDiagnostics))
 	for _, raw := range rawDiagnostics {
 		diagnostic := compileDiagnostic{
@@ -382,7 +433,7 @@ func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
 		}
 
 		if file := raw.File(); file != nil {
-			diagnostic.FileName = toResultFileName(file.FileName())
+			diagnostic.FileName = toResultFileName(file.FileName(), cwd)
 			if raw.Pos() >= 0 {
 				line, column := lineAndColumn(file, raw.Pos())
 				diagnostic.Line = &line
@@ -395,7 +446,14 @@ func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
 	return formatted
 }
 
-func toResultFileName(fileName string) string {
+func toResultFileName(fileName string, cwd string) string {
+	trimmedCwd := strings.TrimRight(cwd, "/")
+	if trimmedCwd != "" && trimmedCwd != "/" {
+		prefix := trimmedCwd + "/"
+		if strings.HasPrefix(fileName, prefix) {
+			return strings.TrimPrefix(fileName, prefix)
+		}
+	}
 	return strings.TrimPrefix(fileName, "/")
 }
 
