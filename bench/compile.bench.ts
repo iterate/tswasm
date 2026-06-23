@@ -1,11 +1,9 @@
 #!/usr/bin/env tsx
 import { execFileSync } from "node:child_process";
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -32,7 +30,6 @@ interface BenchOptions {
   json: string;
   quick: boolean;
   skipNative: boolean;
-  includeInternals: boolean;
   time: number;
   warmupTime: number;
   iterations: number;
@@ -62,7 +59,6 @@ interface BenchCategory {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const typescriptGoRoot = path.join(repoRoot, "typescript-go");
 const tsgoBinary = path.join(repoRoot, "dist", "bench-tsgo");
-const tswasmNativeBenchBinary = path.join(repoRoot, "dist", "bench-tswasm-native");
 const temporaryDirectories: string[] = [];
 
 process.once("exit", cleanupTemporaryDirectories);
@@ -146,9 +142,6 @@ if (!existsSync(path.join(repoRoot, "dist", "index.js"))) {
 
 if (!options.skipNative) {
   buildTsgoBinary();
-  if (options.includeInternals) {
-    buildTswasmNativeBenchBinary();
-  }
 }
 
 const warmCompiler = await createCompiler();
@@ -176,30 +169,6 @@ for (const source of sourceCases) {
       createTsgoCliRunner(source),
     ));
   }
-
-  if (options.includeInternals && !options.skipNative && shouldRunRow(source, "tswasm native helper compile (same Go path)")) {
-    rows.push(runNativeHelperRow(source));
-  }
-
-  if (options.includeInternals && !options.skipNative && shouldRunRow(source, "tswasm native helper from Node (process+files)")) {
-    rows.push(await runFixedSampleRow(
-      source,
-      "tswasm native helper from Node (process+files)",
-      () => {
-        runNativeHelperFromNode(source);
-      },
-    ));
-  }
-}
-
-if (options.includeInternals && !options.skipNative && matchesFilter("tsgo native CLI --version (spawn only)", options.filter)) {
-  rows.push(await runFixedSampleRow(
-    { name: "process overhead", fileName: "none.ts", code: "" },
-    "tsgo native CLI --version (spawn only)",
-    () => {
-      execFileSync(tsgoBinary, ["--version"], { stdio: "pipe" });
-    },
-  ));
 }
 
 printSummary(rows);
@@ -214,7 +183,6 @@ function readOptions(): BenchOptions {
       filter: { type: "string", default: "" },
       json: { type: "string", default: "" },
       quick: { type: "boolean", default: false },
-      "include-internals": { type: "boolean", default: false },
       "skip-native": { type: "boolean", default: false },
       time: { type: "string", default: "" },
       "fixed-samples": { type: "string", default: "" },
@@ -234,7 +202,6 @@ function readOptions(): BenchOptions {
     json: values.json,
     quick,
     skipNative: values["skip-native"],
-    includeInternals: values["include-internals"],
     time,
     warmupTime: quick ? 50 : 150,
     iterations: quick ? 3 : 10,
@@ -255,43 +222,6 @@ function buildTsgoBinary() {
       "-o",
       tsgoBinary,
       "./cmd/tsgo",
-    ],
-    {
-      cwd: typescriptGoRoot,
-      stdio: "pipe",
-    },
-  );
-}
-
-function buildTswasmNativeBenchBinary() {
-  const sourceDir = path.join(repoRoot, "go", "tswasm-native-bench");
-  const buildDir = path.join(typescriptGoRoot, "cmd", "tswasm-native-bench");
-  const sourceLibDir = path.join(typescriptGoRoot, "cmd", "tswasm-wasm", "libs");
-  const buildLibDir = path.join(buildDir, "libs");
-
-  if (!existsSync(sourceLibDir)) {
-    throw new Error("tswasm wasm libs are missing. Run `pnpm run build` before profiling.");
-  }
-
-  rmSync(buildDir, { recursive: true, force: true });
-  mkdirSync(buildLibDir, { recursive: true });
-  copyFileSync(path.join(sourceDir, "main.go"), path.join(buildDir, "main.go"));
-  for (const fileName of readdirSync(sourceLibDir)) {
-    if (fileName.endsWith(".d.ts")) {
-      copyFileSync(path.join(sourceLibDir, fileName), path.join(buildLibDir, fileName));
-    }
-  }
-
-  execFileSync(
-    "go",
-    [
-      "build",
-      "-trimpath",
-      "-buildvcs=false",
-      "-ldflags=-s -w -buildid=",
-      "-o",
-      tswasmNativeBenchBinary,
-      "./cmd/tswasm-native-bench",
     ],
     {
       cwd: typescriptGoRoot,
@@ -321,73 +251,7 @@ async function runTinybenchRows(source: SourceCase, compiler: Compiler): Promise
     throws: true,
   });
 
-  const internalTasks = options.includeInternals
-    ? [
-        {
-          name: "tswasm JSON round trip (no compile)",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "roundTrip",
-            } as any));
-          },
-        },
-        {
-          name: "tswasm standard libs only",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "standardLibraryFiles",
-            } as any));
-          },
-        },
-        {
-          name: "tswasm program setup only",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "programSetup",
-            } as any));
-          },
-        },
-        {
-          name: "tswasm warm compile (SingleThreaded=false)",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "parallelProgram",
-            } as any));
-          },
-        },
-        {
-          name: "tswasm diagnostics only",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "diagnosticsOnly",
-            } as any));
-          },
-        },
-        {
-          name: "tswasm emit only",
-          run: () => {
-            assertTswasmResult(compiler.compile({
-              code: source.code,
-              fileName: source.fileName,
-              benchmarkMode: "emitOnly",
-            } as any));
-          },
-        },
-      ]
-    : [];
-
   const tasks = [
-    ...internalTasks,
     {
       name: "tswasm warm compile",
       run: () => {
@@ -572,91 +436,6 @@ function createTsgoCliRunner(source: SourceCase): () => void {
   };
 }
 
-function runNativeHelperRow(source: SourceCase): BenchRow {
-  const directory = mkdtempSync(path.join(os.tmpdir(), `tswasm-native-${slug(source.name)}-`));
-  temporaryDirectories.push(directory);
-  const inputPath = path.join(directory, source.fileName);
-  writeFileSync(inputPath, source.code);
-
-  const output = execFileSync(
-    tswasmNativeBenchBinary,
-    [
-      "--file",
-      inputPath,
-      "--fileName",
-      source.fileName,
-      "--iterations",
-      String(options.fixedSamples),
-    ],
-    {
-      encoding: "utf8",
-    },
-  );
-  const summary = JSON.parse(output) as {
-    samples: number;
-    meanMs: number;
-    medianMs: number;
-    minMs: number;
-    maxMs: number;
-    hz: number;
-  };
-
-  return {
-    group: source.name,
-    name: "tswasm native helper compile (same Go path)",
-    samples: summary.samples,
-    meanMs: summary.meanMs,
-    medianMs: summary.medianMs,
-    minMs: summary.minMs,
-    maxMs: summary.maxMs,
-    hz: summary.hz,
-    rme: null,
-    method: "fixed-samples",
-  };
-}
-
-function runNativeHelperFromNode(source: SourceCase) {
-  const directory = mkdtempSync(path.join(os.tmpdir(), `tswasm-native-node-${slug(source.name)}-`));
-  temporaryDirectories.push(directory);
-  const inputPath = path.join(directory, source.fileName);
-  const configPath = path.join(directory, "tsconfig.json");
-
-  writeFileSync(inputPath, source.code);
-  writeFileSync(
-    configPath,
-    `${JSON.stringify(
-      {
-        compilerOptions: {
-          target: "ES2024",
-          module: "ESNext",
-          strict: true,
-          skipLibCheck: true,
-          sourceMap: false,
-          declaration: false,
-        },
-        files: [source.fileName],
-      },
-      null,
-      2,
-    )}\n`,
-  );
-
-  execFileSync(
-    tswasmNativeBenchBinary,
-    [
-      "--file",
-      inputPath,
-      "--fileName",
-      source.fileName,
-      "--iterations",
-      "1",
-    ],
-    {
-      stdio: "pipe",
-    },
-  );
-}
-
 function assertTswasmResult(result: CompileResult) {
   if (!result.success) {
     const messages = result.diagnostics.map((diagnostic) => diagnostic.message).join("\n");
@@ -748,7 +527,7 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
   ].includes(row.name));
   const emitOnlyRows = rows.filter((row) => row.name === "TypeScript JS transpileModule (emit only)");
   const fullTypeScriptRows = rows.filter((row) => row.name === "TypeScript JS full program (in-memory)");
-  const nativeRows = rows.filter((row) => row.name.includes("native") || row.name.includes("tsgo"));
+  const nativeRows = rows.filter((row) => row.name === "tsgo native CLI (process+files)");
 
   return [
     {
@@ -771,18 +550,8 @@ function categorizeRows(rows: BenchRow[]): BenchCategory[] {
       ],
     },
     {
-      name: "tswasm internals",
-      description: "Profile-only rows that explain where Go wasm time is going.",
-      rows: rows.filter((row) => row.name.startsWith("tswasm ") && ![
-        "tswasm warm compile",
-        "tswasm cold createCompiler+compile",
-        "tswasm native helper compile (same Go path)",
-        "tswasm native helper from Node (process+files)",
-      ].includes(row.name)),
-    },
-    {
-      name: "Native Go curiosity",
-      description: "These rows require native Go or a native helper process. If native Go is available, use it; these are not portable wasm-environment comparisons. tswasm rows are repeated here as reference points.",
+      name: "Native TypeScript CLI",
+      description: "This row builds and runs the real typescript-go tsgo CLI against temp project files. tswasm rows are repeated as reference points because the native CLI includes process startup and filesystem work.",
       rows: nativeRows.length === 0 ? [] : [
         ...nativeRows,
         ...tswasmReferenceRows,
@@ -857,8 +626,7 @@ function readPackageVersion(packageName: string) {
 }
 
 function readTsgoVersion() {
-  const output = execFileSync(tsgoBinary, ["--version"], { encoding: "utf8" }).trim();
-  return output;
+  return execFileSync(tsgoBinary, ["--version"], { encoding: "utf8" }).trim();
 }
 
 function matchesFilter(value: string, filter: string) {

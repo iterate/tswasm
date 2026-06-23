@@ -40,9 +40,8 @@ var standardLibraryCache struct {
 }
 
 type compileRequest struct {
-	Code          string `json:"code"`
-	FileName      string `json:"fileName"`
-	BenchmarkMode string `json:"benchmarkMode"`
+	Code     string `json:"code"`
+	FileName string `json:"fileName"`
 }
 
 type compileResult struct {
@@ -108,13 +107,6 @@ func compileCode(request compileRequest) (result compileResult) {
 	if !strings.HasPrefix(inputFile, "/") {
 		inputFile = "/" + inputFile
 	}
-	if request.BenchmarkMode == "roundTrip" {
-		return compileResult{
-			JS:      request.Code,
-			Success: true,
-		}
-	}
-
 	sourceFiles, fileNames, err := standardLibraryFiles()
 	if err != nil {
 		return compileResult{
@@ -123,12 +115,6 @@ func compileCode(request compileRequest) (result compileResult) {
 				Category: diagnostics.CategoryError.Name(),
 			}},
 			Success: false,
-		}
-	}
-	if request.BenchmarkMode == "standardLibraryFiles" {
-		return compileResult{
-			JS:      strings.Join(fileNames, "\n"),
-			Success: true,
 		}
 	}
 	sourceFiles[inputFile] = request.Code
@@ -151,14 +137,10 @@ func compileCode(request compileRequest) (result compileResult) {
 		},
 	}
 	host := compiler.NewCompilerHost(currentDirectory, newInlineFS(sourceFiles), currentDirectory, nil, nil)
-	singleThreaded := core.TSTrue
-	if request.BenchmarkMode == "parallelProgram" {
-		singleThreaded = core.TSFalse
-	}
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:         config,
 		Host:           host,
-		SingleThreaded: singleThreaded,
+		SingleThreaded: core.TSTrue,
 	})
 	sourceFile := findSourceFile(program, inputFile)
 	if sourceFile == nil {
@@ -170,30 +152,17 @@ func compileCode(request compileRequest) (result compileResult) {
 			Success: false,
 		}
 	}
-	if request.BenchmarkMode == "programSetup" {
-		return compileResult{
-			JS:      inputFile,
-			Success: true,
-		}
-	}
 
 	ctx := context.Background()
-	if request.BenchmarkMode != "emitOnly" {
-		rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
-			ctx,
-			program,
-			sourceFile,
-			false,
-			program.GetBindDiagnostics,
-			program.GetSemanticDiagnostics,
-		)
-		result.Diagnostics = formatDiagnostics(rawDiagnostics)
-		if request.BenchmarkMode == "diagnosticsOnly" {
-			result.JS = inputFile
-			result.Success = !hasError(result.Diagnostics)
-			return result
-		}
-	}
+	rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
+		ctx,
+		program,
+		sourceFile,
+		false,
+		program.GetBindDiagnostics,
+		program.GetSemanticDiagnostics,
+	)
+	result.Diagnostics = formatDiagnostics(rawDiagnostics)
 
 	var jsText string
 	emitResult := program.Emit(ctx, compiler.EmitOptions{

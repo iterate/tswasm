@@ -56,7 +56,6 @@
     "build": "pnpm run clean && pnpm run build:wasm && pnpm run build:js",
     "bench": "pnpm run build && tsx bench/compile.bench.ts",
     "bench:quick": "pnpm run build && tsx bench/compile.bench.ts --quick",
-    "bench:profile": "pnpm run build && tsx bench/compile.bench.ts --quick --include-internals",
     "size": "pnpm run build && tsx scripts/size-report.ts",
     "test": "pnpm run build && vitest run test",
     "test:browser": "pnpm run build && TSWASM_BROWSER_TEST=1 vitest run test/browser.test.ts",

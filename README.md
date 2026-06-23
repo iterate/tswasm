@@ -118,9 +118,9 @@ pnpm size
 ```
 
 The script builds `tswasm`, runs `npm pack --dry-run --json`, rejects
-benchmark-only native binaries if they would be packed, and prints raw,
-gzip, and brotli sizes for the runtime assets. The local JS compiler reference
-rows are direct local package/file sizes, not full browser bundle graphs.
+benchmark-only binaries if they would be packed, and prints raw, gzip, and
+brotli sizes for the runtime assets. The local JS compiler reference rows are
+direct local package/file sizes, not full browser bundle graphs.
 
 Representative local run on 2026-06-19:
 
@@ -157,15 +157,14 @@ API:
 ```bash
 pnpm bench
 pnpm bench:quick
-pnpm bench:profile
 pnpm exec tsx bench/compile.bench.ts --filter=warm
 pnpm exec tsx bench/compile.bench.ts --skip-native --json=tasks/bench-results.ignoreme.json
 ```
 
 `pnpm bench` builds `tswasm`, builds a local native `tsgo` CLI from
 `typescript-go/`, and then prints Markdown tables. `bench:quick` uses shorter
-sample windows for iteration while changing benchmark code. `bench:profile`
-adds internal diagnostic rows for the wasm path and a spawn-only `tsgo` row.
+sample windows for iteration while changing benchmark code. Pass `--skip-native`
+when the Go toolchain is unavailable or you only want the JS/wasm package rows.
 
 The benchmark has two source cases:
 
@@ -175,9 +174,9 @@ The benchmark has two source cases:
   mapped type key remapping, template literal types, and generic call-site
   inference.
 
-The rows are grouped by comparison category. The first category is the main one:
-portable full compile, where every row typechecks and emits and can run in the
-same wasm-capable environments as `tswasm`.
+The rows are grouped by comparison category. The main category is portable full
+compile, where every row typechecks and emits and can run in the same
+wasm-capable environments as `tswasm`.
 
 - `tswasm warm compile`: one shared `createCompiler()` result for the whole
   process; timed work is only `ts.compile(code)`.
@@ -190,10 +189,10 @@ same wasm-capable environments as `tswasm`.
   collects pre-emit diagnostics, and emits to memory.
 - `TypeScript JS transpileModule (emit only)`: intentionally favorable baseline
   for the classic JS compiler. It does not typecheck.
-- `tsgo native CLI (process+files)`: runs the local native TypeScript CLI in a
-  subprocess against a temp project. This includes process startup and file
-  reads/writes, so it is a native-Go curiosity rather than a portable
-  wasm-environment comparison.
+- `tsgo native CLI (process+files)`: builds and runs the real
+  `typescript-go/cmd/tsgo` CLI in a subprocess against a temp project. This is a
+  normal native TypeScript comparator, but it includes process startup and file
+  reads/writes, so it is not equivalent to warm in-memory `tswasm` compilation.
 
 The comparison framing follows:
 
@@ -242,11 +241,11 @@ repeated here as reference points.
 | tswasm warm compile | 28.90 | 28.11 | 18 | 102.52x slower | rme 4.63% |
 | TypeScript JS full program (in-memory) | 163.2 | 162.2 | 10 | 579.0x slower | rme 3.26% |
 
-### Simple Snippet: Native Go Curiosity
+### Simple Snippet: Native TypeScript CLI
 
-These rows require native Go or a native helper process. If native Go is
-available, use it; these are not portable wasm-environment comparisons. The
-`tswasm` rows are repeated here as reference points.
+This row builds and runs the real `typescript-go` `tsgo` CLI against temp
+project files. `tswasm` rows are repeated as reference points because the native
+CLI includes process startup and filesystem work.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
@@ -278,11 +277,11 @@ repeated here as reference points.
 | tswasm warm compile | 24.21 | 23.53 | 21 | 60.07x slower | rme 6.99% |
 | TypeScript JS full program (in-memory) | 161.9 | 157.8 | 10 | 401.7x slower | rme 4.59% |
 
-### Type-Heavy Snippet: Native Go Curiosity
+### Type-Heavy Snippet: Native TypeScript CLI
 
-These rows require native Go or a native helper process. If native Go is
-available, use it; these are not portable wasm-environment comparisons. The
-`tswasm` rows are repeated here as reference points.
+This row builds and runs the real `typescript-go` `tsgo` CLI against temp
+project files. `tswasm` rows are repeated as reference points because the native
+CLI includes process startup and filesystem work.
 
 | Benchmark | mean ms | median ms | samples | vs fastest | notes |
 |---|---:|---:|---:|---:|---|
