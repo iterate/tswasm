@@ -40,12 +40,14 @@ var standardLibraryCache struct {
 }
 
 type compileRequest struct {
-	Code     string `json:"code"`
-	FileName string `json:"fileName"`
+	Code     string            `json:"code"`
+	FileName string            `json:"fileName"`
+	Files    map[string]string `json:"files"`
 }
 
 type compileResult struct {
 	JS          string              `json:"js"`
+	Outputs     map[string]string   `json:"outputs"`
 	Diagnostics []compileDiagnostic `json:"diagnostics"`
 	Success     bool                `json:"success"`
 }
@@ -54,8 +56,14 @@ type compileDiagnostic struct {
 	Message  string `json:"message"`
 	Code     int    `json:"code"`
 	Category string `json:"category"`
+	FileName string `json:"fileName,omitempty"`
 	Line     *int   `json:"line,omitempty"`
 	Column   *int   `json:"column,omitempty"`
+}
+
+type parseConfigHost struct {
+	fs               vfs.FS
+	currentDirectory string
 }
 
 func main() {
@@ -100,13 +108,6 @@ func compileCode(request compileRequest) (result compileResult) {
 		}
 	}()
 
-	inputFile := request.FileName
-	if inputFile == "" {
-		inputFile = defaultInputFile
-	}
-	if !strings.HasPrefix(inputFile, "/") {
-		inputFile = "/" + inputFile
-	}
 	sourceFiles, fileNames, err := standardLibraryFiles()
 	if err != nil {
 		return compileResult{
@@ -117,36 +118,31 @@ func compileCode(request compileRequest) (result compileResult) {
 			Success: false,
 		}
 	}
-	sourceFiles[inputFile] = request.Code
-	fileNames = append(fileNames, inputFile)
 
-	options := &core.CompilerOptions{
-		Target:              core.ScriptTargetES2024,
-		Module:              core.ModuleKindESNext,
-		NoLib:               core.TSTrue,
-		SkipLibCheck:        core.TSTrue,
-		Strict:              core.TSTrue,
-		SkipDefaultLibCheck: core.TSTrue,
-		SourceMap:           core.TSFalse,
-		Declaration:         core.TSFalse,
+	config, targetFile, singleInput, requestDiagnostics := prepareCompileConfig(request, sourceFiles, fileNames)
+	if len(requestDiagnostics) > 0 {
+		return compileResult{
+			Outputs:     map[string]string{},
+			Diagnostics: requestDiagnostics,
+			Success:     false,
+		}
 	}
-	config := &tsoptions.ParsedCommandLine{
-		ParsedConfig: &core.ParsedOptions{
-			FileNames:       fileNames,
-			CompilerOptions: options,
-		},
-	}
+
 	host := compiler.NewCompilerHost(currentDirectory, newInlineFS(sourceFiles), currentDirectory, nil, nil)
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:         config,
 		Host:           host,
 		SingleThreaded: core.TSTrue,
 	})
-	sourceFile := findSourceFile(program, inputFile)
-	if sourceFile == nil {
+	var targetSourceFile *ast.SourceFile
+	if singleInput {
+		targetSourceFile = findSourceFile(program, targetFile)
+	}
+	if singleInput && targetSourceFile == nil {
 		return compileResult{
+			Outputs: map[string]string{},
 			Diagnostics: []compileDiagnostic{{
-				Message:  "typescript-go wasm did not load " + inputFile,
+				Message:  "typescript-go wasm did not load " + targetFile,
 				Category: diagnostics.CategoryError.Name(),
 			}},
 			Success: false,
@@ -157,31 +153,169 @@ func compileCode(request compileRequest) (result compileResult) {
 	rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
 		ctx,
 		program,
-		sourceFile,
+		targetSourceFile,
 		false,
 		program.GetBindDiagnostics,
 		program.GetSemanticDiagnostics,
 	)
 	result.Diagnostics = formatDiagnostics(rawDiagnostics)
 
-	var jsText string
+	outputs := map[string]string{}
 	emitResult := program.Emit(ctx, compiler.EmitOptions{
-		TargetSourceFile: sourceFile,
+		TargetSourceFile: targetSourceFile,
 		WriteFile: func(fileName string, text string, data *compiler.WriteFileData) error {
 			if strings.HasSuffix(fileName, ".js") {
-				jsText = text
+				outputs[toResultFileName(fileName)] = text
 			}
 			return nil
 		},
 	})
+	result.Outputs = outputs
 	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics)...)
 	if emitResult.EmitSkipped {
 		return result
 	}
 
-	result.JS = jsText
+	if singleInput {
+		for _, text := range outputs {
+			result.JS = text
+			break
+		}
+	}
 	result.Success = !hasError(result.Diagnostics)
 	return result
+}
+
+func prepareCompileConfig(
+	request compileRequest,
+	sourceFiles map[string]string,
+	standardLibraryFileNames []string,
+) (*tsoptions.ParsedCommandLine, string, bool, []compileDiagnostic) {
+	if request.Files == nil {
+		inputFile := normalizeInputFileName(request.FileName)
+		sourceFiles[inputFile] = request.Code
+		fileNames := append(slices.Clone(standardLibraryFileNames), inputFile)
+		return newParsedCommandLine(defaultCompilerOptions(), fileNames), inputFile, true, nil
+	}
+
+	userFileNames := make([]string, 0, len(request.Files))
+	for fileName, contents := range request.Files {
+		if fileName == "" {
+			return nil, "", false, []compileDiagnostic{{
+				Message:  "compile file map cannot include an empty file name",
+				Category: diagnostics.CategoryError.Name(),
+			}}
+		}
+		normalized := normalizeInputFileName(fileName)
+		sourceFiles[normalized] = contents
+		if normalized != "/tsconfig.json" {
+			userFileNames = append(userFileNames, normalized)
+		}
+	}
+	slices.Sort(userFileNames)
+
+	configFileContents, hasConfig := sourceFiles["/tsconfig.json"]
+	if hasConfig {
+		configFileName := "/tsconfig.json"
+		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles)
+		applyCompilerDefaults(config.ParsedConfig.CompilerOptions)
+		config.ParsedConfig.FileNames = mergeFileNames(standardLibraryFileNames, config.ParsedConfig.FileNames)
+		return config, "", false, nil
+	}
+
+	if len(userFileNames) == 0 {
+		return nil, "", false, []compileDiagnostic{{
+			Message:  "compile file map must include at least one TypeScript source file",
+			Category: diagnostics.CategoryError.Name(),
+		}}
+	}
+
+	fileNames := mergeFileNames(standardLibraryFileNames, userFileNames)
+	return newParsedCommandLine(defaultCompilerOptions(), fileNames), "", false, nil
+}
+
+func defaultCompilerOptions() *core.CompilerOptions {
+	options := &core.CompilerOptions{}
+	applyCompilerDefaults(options)
+	return options
+}
+
+func applyCompilerDefaults(options *core.CompilerOptions) {
+	if options.Target == core.ScriptTargetNone {
+		options.Target = core.ScriptTargetES2024
+	}
+	if options.Module == core.ModuleKindNone {
+		options.Module = core.ModuleKindESNext
+	}
+	if options.Strict == core.TSUnknown {
+		options.Strict = core.TSTrue
+	}
+	if options.SourceMap == core.TSUnknown {
+		options.SourceMap = core.TSFalse
+	}
+	if options.Declaration == core.TSUnknown {
+		options.Declaration = core.TSFalse
+	}
+	options.NoLib = core.TSTrue
+	options.SkipLibCheck = core.TSTrue
+	options.SkipDefaultLibCheck = core.TSTrue
+}
+
+func newParsedCommandLine(options *core.CompilerOptions, fileNames []string) *tsoptions.ParsedCommandLine {
+	return &tsoptions.ParsedCommandLine{
+		ParsedConfig: &core.ParsedOptions{
+			FileNames:       fileNames,
+			CompilerOptions: options,
+		},
+	}
+}
+
+func parseVirtualTsConfig(
+	configFileName string,
+	contents string,
+	sourceFiles map[string]string,
+) *tsoptions.ParsedCommandLine {
+	host := &parseConfigHost{
+		fs:               newInlineFS(sourceFiles),
+		currentDirectory: currentDirectory,
+	}
+	configDir := tspath.GetDirectoryPath(configFileName)
+	configSourceFile := tsoptions.NewTsconfigSourceFileFromFilePath(
+		configFileName,
+		tspath.ToPath(configFileName, currentDirectory, true),
+		contents,
+	)
+	return tsoptions.ParseJsonSourceFileConfigFileContent(
+		configSourceFile,
+		host,
+		configDir,
+		nil,
+		nil,
+		configFileName,
+		nil,
+		nil,
+		nil,
+	)
+}
+
+func normalizeInputFileName(fileName string) string {
+	if fileName == "" {
+		return defaultInputFile
+	}
+	return tspath.GetNormalizedAbsolutePath(fileName, currentDirectory)
+}
+
+func mergeFileNames(first []string, second []string) []string {
+	merged := make([]string, 0, len(first)+len(second))
+	seen := map[string]struct{}{}
+	for _, fileName := range append(slices.Clone(first), second...) {
+		if _, ok := seen[fileName]; ok {
+			continue
+		}
+		seen[fileName] = struct{}{}
+		merged = append(merged, fileName)
+	}
+	return merged
 }
 
 func standardLibraryFiles() (map[string]string, []string, error) {
@@ -247,15 +381,30 @@ func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
 			Category: raw.Category().Name(),
 		}
 
-		if file := raw.File(); file != nil && raw.Pos() >= 0 {
-			line, column := lineAndColumn(file, raw.Pos())
-			diagnostic.Line = &line
-			diagnostic.Column = &column
+		if file := raw.File(); file != nil {
+			diagnostic.FileName = toResultFileName(file.FileName())
+			if raw.Pos() >= 0 {
+				line, column := lineAndColumn(file, raw.Pos())
+				diagnostic.Line = &line
+				diagnostic.Column = &column
+			}
 		}
 
 		formatted = append(formatted, diagnostic)
 	}
 	return formatted
+}
+
+func toResultFileName(fileName string) string {
+	return strings.TrimPrefix(fileName, "/")
+}
+
+func (h *parseConfigHost) FS() vfs.FS {
+	return h.fs
+}
+
+func (h *parseConfigHost) GetCurrentDirectory() string {
+	return h.currentDirectory
 }
 
 func flattenDiagnostic(diagnostic *ast.Diagnostic) string {
@@ -286,9 +435,13 @@ func hasError(items []compileDiagnostic) bool {
 }
 
 func encodeResult(result compileResult) string {
+	if result.Outputs == nil {
+		result.Outputs = map[string]string{}
+	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		encoded, _ = json.Marshal(compileResult{
+			Outputs: map[string]string{},
 			Diagnostics: []compileDiagnostic{{
 				Message:  "failed to encode compiler result: " + err.Error(),
 				Category: diagnostics.CategoryError.Name(),

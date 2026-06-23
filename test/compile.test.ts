@@ -19,9 +19,12 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
     compiler: {
       name: "typescript-go (tsgo)",
       runtime: "Go wasm",
-      mode: "single in-memory /input.ts",
+      mode: "in-memory virtual TypeScript project",
       lib: "bundled TypeScript lib.es2024.d.ts",
     },
+  });
+  expect(result.outputs).toMatchObject({
+    "input.js": result.js,
   });
   expect(result.js).toMatchInlineSnapshot(`
     ""use strict";
@@ -57,4 +60,68 @@ test("returns TypeScript diagnostics", async () => {
     const value = "nope";
     "
   `);
+});
+
+test("compiles a virtual TypeScript project with relative imports", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    "src/a.ts": "export const aa = 1;",
+    "src/b.ts": "import { aa } from './a';\n\nexport const bb = aa + 0.5;",
+  });
+
+  expect(result).toMatchObject({
+    success: true,
+    diagnostics: [],
+    js: "",
+    outputs: {
+      "src/a.js": expect.stringContaining("export const aa = 1;"),
+      "src/b.js": expect.stringContaining("export const bb = aa + 0.5;"),
+    },
+  });
+});
+
+test("parses a virtual tsconfig.json from the source map", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: {
+        module: "CommonJS",
+      },
+      files: ["src/index.ts"],
+    }),
+    "src/value.ts": "export const value = 41;",
+    "src/index.ts": "import { value } from './value';\n\nexport const answer = value + 1;",
+  });
+
+  expect(result).toMatchObject({
+    success: true,
+    diagnostics: [],
+    js: "",
+    outputs: {
+      "src/value.js": expect.stringContaining("exports.value = 41;"),
+      "src/index.js": expect.stringContaining('require("./value")'),
+    },
+  });
+});
+
+test("reports file names for virtual project diagnostics", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    "src/a.ts": `export const value: number = "nope";`,
+    "src/b.ts": "import { value } from './a';\n\nvalue.toFixed();",
+  });
+
+  expect(result).toMatchObject({
+    success: false,
+    diagnostics: [
+      {
+        code: 2322,
+        category: "error",
+        fileName: "src/a.ts",
+        line: 1,
+        column: 13,
+        message: "Type 'string' is not assignable to type 'number'.",
+      },
+    ],
+  });
 });

@@ -8,8 +8,9 @@ small wasm command from inside that subtree. Building from inside the upstream G
 module lets the command legally import `typescript-go/internal/...` without
 patching upstream compiler packages.
 
-The current API compiles one in-memory TypeScript file, `/input.ts` by default,
-with modern ECMAScript lib definitions and returns diagnostics plus emitted
+The current API compiles either one in-memory TypeScript file, `/input.ts` by
+default, or a virtual in-memory project described by a source-file map. It uses
+modern ECMAScript lib definitions and returns diagnostics plus emitted
 JavaScript.
 
 `tswasm` is published as an alpha. The package is useful for experiments,
@@ -37,6 +38,38 @@ console.log(result.success) // true
 console.log(result.js) // "const x = 123"
 
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
+```
+
+For multiple files, pass a source-file map. Relative imports resolve inside the
+same virtual filesystem, and emitted JavaScript is returned by output file name:
+
+```ts
+import { createCompiler } from 'tswasm'
+
+const ts = await createCompiler()
+const result = ts.compile({
+  'src/a.ts': 'export const aa = 1',
+  'src/b.ts': "import { aa } from './a'\n\nexport const bb = aa + 0.5",
+})
+
+console.log(result.outputs['src/b.js']) // "import { aa } from './a';\nexport const bb = aa + 0.5;\n"
+```
+
+If the file map contains `tsconfig.json`, `tswasm` parses that virtual config
+with TypeScript Go's config parser. It never discovers or reads a real
+`tsconfig.json` from the host filesystem:
+
+```ts
+const result = ts.compile({
+  'tsconfig.json': JSON.stringify({
+    compilerOptions: { module: 'CommonJS' },
+    files: ['src/index.ts'],
+  }),
+  'src/value.ts': 'export const value = 41',
+  'src/index.ts': "import { value } from './value'\n\nexport const answer = value + 1",
+})
+
+console.log(result.outputs['src/index.js']) // CommonJS emit
 ```
 
 For bundlers and worker runtimes, pass the wasm module or URL explicitly:
@@ -74,12 +107,15 @@ const ts = await createCompiler({ wasm })
 
 ## Current Limits
 
-- Compiles one in-memory input file per call. Pass `fileName` when diagnostics
-  should use a path other than `/input.ts`.
-- Uses bundled `lib.es2024.d.ts` files, `strict: true`, `target: ES2024`, and
-  `module: ESNext`.
-- Does not load a `tsconfig.json`, file graph, package dependencies, or custom
-  declaration files yet.
+- Compiles in-memory input only. Pass a string or `{ code, fileName }` for one
+  file, or a source-file map for a virtual project.
+- Without a virtual `tsconfig.json`, uses bundled `lib.es2024.d.ts` files,
+  `strict: true`, `target: ES2024`, and `module: ESNext`.
+- Supports a virtual `tsconfig.json` supplied in the source-file map. It can
+  select files and compiler options through TypeScript Go's parser, but the
+  bundled ES2024 lib set still comes from the package.
+- Does not load package dependencies, `node_modules`, real host files, or
+  declaration files that are not supplied in the source-file map.
 - Has no disposal API. Reusing one `createCompiler()` result is cheaper than
   repeatedly creating new runtimes.
 - Ships a large wasm payload: about 29 MiB raw and about 6.8 MiB compressed in

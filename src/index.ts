@@ -6,8 +6,11 @@ export interface CompileRequest {
   fileName?: string;
 }
 
+export type SourceFileMap = Record<string, string>;
+
 export interface CompileResult {
   js: string;
+  outputs: Record<string, string>;
   diagnostics: Diagnostic[];
   success: boolean;
   compiler: CompilerInfo;
@@ -17,6 +20,7 @@ export interface Diagnostic {
   message: string;
   code: number;
   category: "error" | "warning" | "suggestion" | "message";
+  fileName?: string;
   line?: number;
   column?: number;
 }
@@ -31,6 +35,7 @@ export interface CompilerInfo {
 export interface Compiler {
   compile(code: string): CompileResult;
   compile(request: CompileRequest): CompileResult;
+  compile(files: SourceFileMap): CompileResult;
 }
 
 export interface CreateCompilerOptions {
@@ -40,7 +45,7 @@ export interface CreateCompilerOptions {
 export const compilerInfo: CompilerInfo = {
   name: "typescript-go (tsgo)",
   runtime: "Go wasm",
-  mode: "single in-memory /input.ts",
+  mode: "in-memory virtual TypeScript project",
   lib: "bundled TypeScript lib.es2024.d.ts",
 };
 
@@ -48,6 +53,7 @@ type NativeCompile = (requestJson: string) => string;
 
 interface NativeCompileResult {
   js: string;
+  outputs: Record<string, string>;
   diagnostics: Diagnostic[];
   success: boolean;
 }
@@ -73,8 +79,8 @@ export async function createCompiler(
   const nativeCompile = await createNativeCompile(wasm);
 
   return {
-    compile(input: string | CompileRequest) {
-      const request = typeof input === "string" ? { code: input } : input;
+    compile(input: string | CompileRequest | SourceFileMap) {
+      const request = normalizeCompileInput(input);
       const nativeResult = JSON.parse(
         nativeCompile(JSON.stringify(request))
       ) as NativeCompileResult;
@@ -84,6 +90,18 @@ export async function createCompiler(
       };
     },
   };
+}
+
+function normalizeCompileInput(input: string | CompileRequest | SourceFileMap) {
+  if (typeof input === "string") {
+    return { code: input };
+  }
+
+  if (typeof (input as CompileRequest).code === "string") {
+    return input;
+  }
+
+  return { files: input };
 }
 
 function defaultWasmUrl(): URL {
