@@ -58,19 +58,20 @@ const result = ts.compile({
 console.log(result.outputs['src/b.js']) // "import { aa } from './a';\nexport const bb = aa + 0.5;\n"
 ```
 
-Pass `tsconfig` as JSON text when the virtual project needs config-selected
-files or compiler options. `tswasm` parses that virtual config with TypeScript
-Go's config parser. It never discovers or reads a real `tsconfig.json` from the
-host filesystem:
+Pass `tsconfig` as a virtual file name when the virtual project needs
+config-selected files or compiler options. `tswasm` reads that config from the
+project `files` map and parses it with TypeScript Go's config parser. It never
+discovers or reads a real `tsconfig.json` from the host filesystem:
 
 ```ts
 const result = ts.compile({
   cwd: '/app',
-  tsconfig: JSON.stringify({
-    compilerOptions: { module: 'CommonJS' },
-    files: ['src/index.ts'],
-  }),
+  tsconfig: 'tsconfig.lib.json',
   files: {
+    'tsconfig.lib.json': JSON.stringify({
+      compilerOptions: { module: 'CommonJS' },
+      files: ['src/index.ts'],
+    }),
     'src/value.ts': 'export const value = 41',
     'src/index.ts': "import { value } from './value'\n\nexport const answer = value + 1",
   },
@@ -87,14 +88,15 @@ be supplied by adding their package files to the same `files` map:
 ```ts
 const result = ts.compile({
   cwd: '/app',
-  tsconfig: JSON.stringify({
-    compilerOptions: {
-      moduleResolution: 'Bundler',
-      types: ['custom'],
-    },
-    files: ['src/index.ts'],
-  }),
+  tsconfig: 'tsconfig.json',
   files: {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        moduleResolution: 'Bundler',
+        types: ['custom'],
+      },
+      files: ['src/index.ts'],
+    }),
     'src/index.ts': "import { external } from 'pkg'\n\nexport const value = external + typedValue",
     'node_modules/pkg/package.json': JSON.stringify({ name: 'pkg', types: 'index.d.ts' }),
     'node_modules/pkg/index.d.ts': 'export const external: number',
@@ -110,11 +112,12 @@ override for hosts that need to set those roots without editing the config JSON:
 ts.compile({
   cwd: '/app',
   typeRoots: ['types'],
-  tsconfig: JSON.stringify({
-    compilerOptions: { types: ['custom'] },
-    files: ['src/index.ts'],
-  }),
+  tsconfig: 'tsconfig.json',
   files: {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { types: ['custom'] },
+      files: ['src/index.ts'],
+    }),
     'src/index.ts': 'typedValue.toFixed()',
     'types/custom/index.d.ts': 'declare const typedValue: number',
   },
@@ -160,9 +163,10 @@ const ts = await createCompiler({ wasm })
   file, or `{ files, tsconfig, typeRoots, cwd }` for a virtual project.
 - Without a virtual `tsconfig.json`, uses bundled `lib.es2024.d.ts` files,
   `strict: true`, `target: ES2024`, and `module: ESNext`.
-- Supports virtual `tsconfig` JSON text supplied in the project request. It can
-  select files and compiler options through TypeScript Go's parser, but the
-  bundled ES2024 lib set still comes from the package.
+- Supports a virtual `tsconfig` file path supplied in the project request. The
+  named config must exist in `files`; it can select files and compiler options
+  through TypeScript Go's parser, but the bundled ES2024 lib set still comes
+  from the package.
 - Does not load package dependencies, `node_modules`, real host files, or
   declaration files that are not supplied in the project `files` map.
 - Has no disposal API. Reusing one `createCompiler()` result is cheaper than

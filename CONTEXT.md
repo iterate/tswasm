@@ -18,7 +18,7 @@ An object mapping virtual file names to source text for a **Virtual project**.
 _Avoid_: Filesystem, project directory
 
 **Virtual config**:
-A `tsconfig` JSON string supplied in a **Project request** and parsed from memory.
+A TypeScript config file supplied in the **Source-file map** and selected by the **Project request** `tsconfig` path.
 _Avoid_: Host config, discovered config
 
 **Virtual cwd**:
@@ -33,14 +33,14 @@ _Avoid_: Project request
 
 - A **Virtual project** is described by exactly one **Project request**.
 - A **Project request** contains exactly one **Source-file map**.
-- A **Project request** may contain one **Virtual config**.
+- A **Project request** may select one **Virtual config** by virtual file name.
 - A **Project request** may set one **Virtual cwd**.
 - A **Single-file request** is not a **Virtual project**, even though both compile through the same wasm runtime.
 
 ## Example dialogue
 
 > **Dev:** "Should a `tsconfig.json` next to the app be loaded when we compile a project request?"
-> **Domain expert:** "No. Only a **Virtual config** in the **Project request** participates in compilation."
+> **Domain expert:** "No. Only a **Virtual config** selected by the **Project request** participates in compilation."
 
 ## Flagged ambiguities
 

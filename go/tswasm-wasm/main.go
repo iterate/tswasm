@@ -204,7 +204,7 @@ func prepareCompileConfig(
 	}
 
 	userFileNames := make([]string, 0, len(request.Files))
-	configFileName := normalizeInputFileName("tsconfig.json", cwd)
+	configFileName := normalizeProjectConfigFileName(request.TSConfig, cwd)
 	for fileName, contents := range request.Files {
 		if fileName == "" {
 			return nil, "", false, []compileDiagnostic{{
@@ -220,12 +220,12 @@ func prepareCompileConfig(
 	}
 	slices.Sort(userFileNames)
 
-	configFileContents := request.TSConfig
-	hasConfig := configFileContents != ""
-	if hasConfig {
-		sourceFiles[configFileName] = configFileContents
-	} else {
-		configFileContents, hasConfig = sourceFiles[configFileName]
+	configFileContents, hasConfig := sourceFiles[configFileName]
+	if request.TSConfig != "" && !hasConfig {
+		return nil, "", false, []compileDiagnostic{{
+			Message:  "compile tsconfig file was not found in files: " + toResultFileName(configFileName, cwd),
+			Category: diagnostics.CategoryError.Name(),
+		}}
 	}
 	if hasConfig {
 		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles, cwd)
@@ -325,6 +325,13 @@ func normalizeCurrentDirectory(cwd string) string {
 		return defaultCurrentDirectory
 	}
 	return tspath.GetNormalizedAbsolutePath(cwd, defaultCurrentDirectory)
+}
+
+func normalizeProjectConfigFileName(tsconfig string, cwd string) string {
+	if tsconfig == "" {
+		return normalizeInputFileName("tsconfig.json", cwd)
+	}
+	return normalizeInputFileName(tsconfig, cwd)
 }
 
 func normalizeInputFileName(fileName string, cwd string) string {

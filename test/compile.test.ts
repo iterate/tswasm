@@ -85,13 +85,14 @@ test("compiles a virtual TypeScript project with relative imports", async () => 
 test("parses a virtual tsconfig for a project request", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
-    tsconfig: JSON.stringify({
-      compilerOptions: {
-        module: "CommonJS",
-      },
-      files: ["src/index.ts"],
-    }),
+    tsconfig: "tsconfig.lib.json",
     files: {
+      "tsconfig.lib.json": JSON.stringify({
+        compilerOptions: {
+          module: "CommonJS",
+        },
+        files: ["src/index.ts"],
+      }),
       "src/value.ts": "export const value = 41;",
       "src/index.ts": "import { value } from './value';\n\nexport const answer = value + 1;",
     },
@@ -136,10 +137,11 @@ test("uses cwd for virtual project paths and output names", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/project",
-    tsconfig: JSON.stringify({
-      files: ["src/index.ts"],
-    }),
+    tsconfig: "tsconfig.json",
     files: {
+      "tsconfig.json": JSON.stringify({
+        files: ["src/index.ts"],
+      }),
       "src/index.ts": "export const value = 123;",
     },
   });
@@ -157,13 +159,14 @@ test("resolves virtual node_modules package types", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
-    tsconfig: JSON.stringify({
-      compilerOptions: {
-        moduleResolution: "Bundler",
-      },
-      files: ["src/index.ts"],
-    }),
+    tsconfig: "tsconfig.json",
     files: {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          moduleResolution: "Bundler",
+        },
+        files: ["src/index.ts"],
+      }),
       "src/index.ts": "import { external } from 'pkg';\n\nexport const value = external + 1;",
       "node_modules/pkg/package.json": JSON.stringify({
         name: "pkg",
@@ -187,13 +190,14 @@ test("uses default virtual node_modules at-types roots from cwd", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
-    tsconfig: JSON.stringify({
-      compilerOptions: {
-        types: ["custom"],
-      },
-      files: ["src/index.ts"],
-    }),
+    tsconfig: "tsconfig.json",
     files: {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          types: ["custom"],
+        },
+        files: ["src/index.ts"],
+      }),
       "src/index.ts": "export const value = typedValue;",
       "node_modules/@types/custom/index.d.ts": "declare const typedValue: number;",
     },
@@ -213,13 +217,14 @@ test("uses explicit project typeRoots as a virtual filesystem override", async (
   const result = ts.compile({
     cwd: "/app",
     typeRoots: ["types"],
-    tsconfig: JSON.stringify({
-      compilerOptions: {
-        types: ["custom"],
-      },
-      files: ["src/index.ts"],
-    }),
+    tsconfig: "tsconfig.json",
     files: {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          types: ["custom"],
+        },
+        files: ["src/index.ts"],
+      }),
       "src/index.ts": "export const value = typedValue;",
       "types/custom/index.d.ts": "declare const typedValue: number;",
     },
@@ -231,5 +236,25 @@ test("uses explicit project typeRoots as a virtual filesystem override", async (
     outputs: {
       "src/index.js": expect.stringContaining("export const value = typedValue;"),
     },
+  });
+});
+
+test("reports a missing virtual tsconfig path", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    tsconfig: "tsconfig.lib.json",
+    files: {
+      "src/index.ts": "export const value = 1;",
+    },
+  });
+
+  expect(result).toMatchObject({
+    success: false,
+    diagnostics: [
+      {
+        category: "error",
+        message: "compile tsconfig file was not found in files: tsconfig.lib.json",
+      },
+    ],
   });
 });
