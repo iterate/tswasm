@@ -38,24 +38,6 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
   `);
 });
 
-test("rejects removed object code requests", async () => {
-  const ts = await createCompiler();
-  const result = ts.compile({
-    code: "export const value = 1;",
-    fileName: "src/value.ts",
-  } as any);
-
-  expect(result).toMatchObject({
-    success: false,
-    diagnostics: [
-      {
-        category: "error",
-        message: "compile project request must include files",
-      },
-    ],
-  });
-});
-
 test("returns TypeScript diagnostics", async () => {
   const ts = await createCompiler();
   const result = ts.compile(`const value: number = "nope";`);

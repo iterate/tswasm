@@ -40,7 +40,7 @@ _Avoid_: Project request
 - A **Project request** may set one **Entrypoint**.
 - A **Project request** may select one **Virtual config** by virtual file name, or use the default `tsconfig.json` at the **Virtual cwd**.
 - A **Project request** may set one **Virtual cwd**.
-- A **String shorthand** is equivalent to a generated **Project request**, not a separate object API.
+- A **String shorthand** is equivalent to a generated **Project request**.
 
 ## Example dialogue
 

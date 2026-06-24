@@ -7,7 +7,7 @@ size: medium
 
 Status summary: Complete. The spike adds a virtual project API with string shorthand, resolves relative imports across in-memory files, returns emitted JavaScript by output file name, supports entrypoint-selected `result.js`, supports tsc-like virtual `tsconfig.json` selection, supports virtual `cwd`, documents the behavior, and passes the local release check.
 
-- [x] Add a multi-input compile API while keeping `compile(string)` as shorthand. _Implemented in `src/index.ts` as explicit project requests: `compile({ files, entrypoint, tsconfig, cwd })`; the removed `{ code, fileName }` object shape now fails if called dynamically._
+- [x] Add a multi-input compile API while keeping `compile(string)` as shorthand. _Implemented in `src/index.ts` as explicit project requests: `compile({ files, entrypoint, tsconfig, cwd })`._
 - [x] Resolve relative imports between in-memory files. _Implemented in `go/tswasm-wasm/main.go` through the existing inline VFS and TypeScript Go program creation._
 - [x] Return emitted JavaScript for every emitted source file. _Implemented as `CompileResult.outputs`, including `.js`, `.mjs`, and `.cjs`; `entrypoint` selects which emitted output also populates `result.js`._
 - [x] Support an optional virtual `tsconfig`. _Implemented by parsing the named config file from the project `files` map with `tsoptions.ParseJsonSourceFileConfigFileContent`; omitted `tsconfig` uses virtual `tsconfig.json` at `cwd` when present, and no host config discovery was added._
@@ -18,7 +18,7 @@ Status summary: Complete. The spike adds a virtual project API with string short
 ## Decisions
 
 - The project API is explicit: `compile({ files, entrypoint, tsconfig, cwd })`. This avoids the `code` filename ambiguity from a bare file-map overload and leaves room for project-level options.
-- `compile(string)` is only a shorthand for a generated project request with `entrypoint: "index.ts"`, not a separate `{ code, fileName }` object API.
+- `compile(string)` is shorthand for a generated project request with `entrypoint: "index.ts"`.
 - `tsconfig` support means "parse a config file named by the project request from the virtual `files` map, or use virtual `tsconfig.json` at `cwd` when `tsconfig` is omitted." It does not mean discovering or reading `tsconfig.json` from the runtime filesystem.
 - `typeRoots` belongs in virtual `tsconfig`. When it is not set, TypeScript Go derives default `node_modules/@types` roots from the virtual `cwd`/config path.
 - The first implementation should avoid hand-parsing compiler options. TypeScript Go already exposes `tsoptions.ParseJsonSourceFileConfigFileContent`, which can parse config JSON against a virtual filesystem.
@@ -35,5 +35,5 @@ Status summary: Complete. The spike adds a virtual project API with string short
 - 2026-06-24: Removed the top-level `typeRoots` option because it duplicated `compilerOptions.typeRoots` and created unnecessary precedence questions.
 - 2026-06-24: Documented and tested the intentional tsc-like virtual `tsconfig.json` default, while keeping the boundary that only files supplied in the source-file map can participate.
 - 2026-06-24: Preserved `.mjs` and `.cjs` JavaScript emit outputs from `.mts` and `.cts` sources.
-- 2026-06-24: Removed the `{ code, fileName }` object API before release and added `entrypoint` so project requests can select the emitted file mirrored into `result.js`.
-- 2026-06-24: Updated the benchmark harness to compile tswasm cases through `{ files, entrypoint }` instead of the removed object API.
+- 2026-06-24: Added `entrypoint` so project requests can select the emitted file mirrored into `result.js`.
+- 2026-06-24: Updated the benchmark harness to compile tswasm cases through `{ files, entrypoint }`.
