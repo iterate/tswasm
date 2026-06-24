@@ -212,15 +212,15 @@ test("uses default virtual node_modules at-types roots from cwd", async () => {
   });
 });
 
-test("uses explicit project typeRoots as a virtual filesystem override", async () => {
+test("uses virtual tsconfig typeRoots", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
-    typeRoots: ["types"],
     tsconfig: "tsconfig.json",
     files: {
       "tsconfig.json": JSON.stringify({
         compilerOptions: {
+          typeRoots: ["types"],
           types: ["custom"],
         },
         files: ["src/index.ts"],

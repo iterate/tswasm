@@ -12,8 +12,6 @@ export interface CompileProjectRequest {
   files: SourceFileMap;
   /** Virtual path to a config file inside files, for example "tsconfig.lib.json". */
   tsconfig?: string;
-  /** Virtual type root paths, resolved from cwd. Prefer compilerOptions.typeRoots in tsconfig. */
-  typeRoots?: string[];
   /** Virtual current directory for resolving relative project paths. */
   cwd?: string;
 }

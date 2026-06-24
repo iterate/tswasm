@@ -40,12 +40,11 @@ var standardLibraryCache struct {
 }
 
 type compileRequest struct {
-	Code      string            `json:"code"`
-	FileName  string            `json:"fileName"`
-	Files     map[string]string `json:"files"`
-	TSConfig  string            `json:"tsconfig"`
-	TypeRoots []string          `json:"typeRoots"`
-	Cwd       string            `json:"cwd"`
+	Code     string            `json:"code"`
+	FileName string            `json:"fileName"`
+	Files    map[string]string `json:"files"`
+	TSConfig string            `json:"tsconfig"`
+	Cwd      string            `json:"cwd"`
 }
 
 type compileResult struct {
@@ -230,7 +229,6 @@ func prepareCompileConfig(
 	if hasConfig {
 		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles, cwd)
 		applyCompilerDefaults(config.ParsedConfig.CompilerOptions)
-		applyRequestTypeRoots(config.ParsedConfig.CompilerOptions, request.TypeRoots, cwd)
 		config.ParsedConfig.FileNames = mergeFileNames(standardLibraryFileNames, config.ParsedConfig.FileNames)
 		return config, "", false, nil
 	}
@@ -243,9 +241,7 @@ func prepareCompileConfig(
 	}
 
 	fileNames := mergeFileNames(standardLibraryFileNames, userFileNames)
-	options := defaultCompilerOptions()
-	applyRequestTypeRoots(options, request.TypeRoots, cwd)
-	return newParsedCommandLine(options, fileNames), "", false, nil
+	return newParsedCommandLine(defaultCompilerOptions(), fileNames), "", false, nil
 }
 
 func defaultCompilerOptions() *core.CompilerOptions {
@@ -273,13 +269,6 @@ func applyCompilerDefaults(options *core.CompilerOptions) {
 	options.NoLib = core.TSTrue
 	options.SkipLibCheck = core.TSTrue
 	options.SkipDefaultLibCheck = core.TSTrue
-}
-
-func applyRequestTypeRoots(options *core.CompilerOptions, typeRoots []string, cwd string) {
-	if typeRoots == nil {
-		return
-	}
-	options.TypeRoots = normalizeTypeRoots(typeRoots, cwd)
 }
 
 func newParsedCommandLine(options *core.CompilerOptions, fileNames []string) *tsoptions.ParsedCommandLine {
@@ -339,14 +328,6 @@ func normalizeInputFileName(fileName string, cwd string) string {
 		return defaultInputFile
 	}
 	return tspath.GetNormalizedAbsolutePath(fileName, cwd)
-}
-
-func normalizeTypeRoots(typeRoots []string, cwd string) []string {
-	normalized := make([]string, 0, len(typeRoots))
-	for _, typeRoot := range typeRoots {
-		normalized = append(normalized, tspath.GetNormalizedAbsolutePath(typeRoot, cwd))
-	}
-	return normalized
 }
 
 func isRootSourceFile(fileName string, configFileName string) bool {

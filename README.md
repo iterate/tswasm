@@ -81,9 +81,10 @@ console.log(result.outputs['src/index.js']) // CommonJS emit
 ```
 
 The project `cwd` defaults to `/`. Relative file names, `tsconfig` `files` and
-`include` entries, default `node_modules/@types` lookup, and relative
-`typeRoots` are resolved from that virtual current directory. Dependencies can
-be supplied by adding their package files to the same `files` map:
+`include` entries, default `node_modules/@types` lookup, and relative config
+paths such as `compilerOptions.typeRoots` are resolved from that virtual current
+directory. Dependencies can be supplied by adding their package files to the
+same `files` map:
 
 ```ts
 const result = ts.compile({
@@ -105,17 +106,18 @@ const result = ts.compile({
 })
 ```
 
-Prefer putting `typeRoots` in `tsconfig`. The top-level `typeRoots` option is an
-override for hosts that need to set those roots without editing the config JSON:
+Custom type roots belong in the virtual config:
 
 ```ts
 ts.compile({
   cwd: '/app',
-  typeRoots: ['types'],
   tsconfig: 'tsconfig.json',
   files: {
     'tsconfig.json': JSON.stringify({
-      compilerOptions: { types: ['custom'] },
+      compilerOptions: {
+        typeRoots: ['types'],
+        types: ['custom'],
+      },
       files: ['src/index.ts'],
     }),
     'src/index.ts': 'typedValue.toFixed()',
@@ -160,7 +162,7 @@ const ts = await createCompiler({ wasm })
 ## Current Limits
 
 - Compiles in-memory input only. Pass a string or `{ code, fileName }` for one
-  file, or `{ files, tsconfig, typeRoots, cwd }` for a virtual project.
+  file, or `{ files, tsconfig, cwd }` for a virtual project.
 - Without a virtual `tsconfig.json`, uses bundled `lib.es2024.d.ts` files,
   `strict: true`, `target: ES2024`, and `module: ESNext`.
 - Supports a virtual `tsconfig` file path supplied in the project request. The

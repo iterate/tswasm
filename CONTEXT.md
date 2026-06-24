@@ -10,7 +10,7 @@ An in-memory TypeScript project whose files and options are supplied by the call
 _Avoid_: File graph, package, workspace
 
 **Project request**:
-The compile input that describes a **Virtual project** with `files`, optional `tsconfig`, optional `typeRoots`, and optional `cwd`.
+The compile input that describes a **Virtual project** with `files`, optional `tsconfig`, and optional `cwd`.
 _Avoid_: File map
 
 **Source-file map**:
