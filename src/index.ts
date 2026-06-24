@@ -1,15 +1,12 @@
 // @ts-ignore Generated into dist by scripts/build-wasm.ts.
 import "./wasm_exec.js";
 
-export interface CompileRequest {
-  code: string;
-  fileName?: string;
-}
-
 export type SourceFileMap = Record<string, string>;
 
 export interface CompileProjectRequest {
   files: SourceFileMap;
+  /** Virtual source path whose emitted JavaScript should populate result.js. */
+  entrypoint?: string;
   /** Virtual path to a config file inside files, for example "tsconfig.lib.json". */
   tsconfig?: string;
   /** Virtual current directory for resolving relative project paths. */
@@ -42,7 +39,6 @@ export interface CompilerInfo {
 
 export interface Compiler {
   compile(code: string): CompileResult;
-  compile(request: CompileRequest): CompileResult;
   compile(request: CompileProjectRequest): CompileResult;
 }
 
@@ -87,7 +83,7 @@ export async function createCompiler(
   const nativeCompile = await createNativeCompile(wasm);
 
   return {
-    compile(input: string | CompileRequest | CompileProjectRequest) {
+    compile(input: string | CompileProjectRequest) {
       const request = normalizeCompileInput(input);
       const nativeResult = JSON.parse(
         nativeCompile(JSON.stringify(request))
@@ -100,15 +96,15 @@ export async function createCompiler(
   };
 }
 
-function normalizeCompileInput(
-  input: string | CompileRequest | CompileProjectRequest
-) {
+function normalizeCompileInput(input: string | CompileProjectRequest) {
   if (typeof input === "string") {
-    return { code: input };
-  }
-
-  if (typeof (input as CompileRequest).code === "string") {
-    return input;
+    return {
+      entrypoint: "index.ts",
+      files: {
+        "index.ts": input,
+        "tsconfig.json": JSON.stringify({ files: ["index.ts"] }),
+      },
+    };
   }
 
   return input;

@@ -24,7 +24,7 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
     },
   });
   expect(result.outputs).toMatchObject({
-    "input.js": result.js,
+    "index.js": result.js,
   });
   expect(result.js).toMatchInlineSnapshot(`
     ""use strict";
@@ -36,6 +36,24 @@ test("compiles an in-memory TypeScript string with native tsgo wasm", async () =
     }
     "
   `);
+});
+
+test("rejects removed object code requests", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    code: "export const value = 1;",
+    fileName: "src/value.ts",
+  } as any);
+
+  expect(result).toMatchObject({
+    success: false,
+    diagnostics: [
+      {
+        category: "error",
+        message: "compile project request must include files",
+      },
+    ],
+  });
 });
 
 test("returns TypeScript diagnostics", async () => {
@@ -65,6 +83,7 @@ test("returns TypeScript diagnostics", async () => {
 test("compiles a virtual TypeScript project with relative imports", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
+    entrypoint: "src/b.ts",
     files: {
       "src/a.ts": "export const aa = 1;",
       "src/b.ts": "import { aa } from './a';\n\nexport const bb = aa + 0.5;",
@@ -74,22 +93,25 @@ test("compiles a virtual TypeScript project with relative imports", async () => 
   expect(result).toMatchObject({
     success: true,
     diagnostics: [],
-    js: "",
     outputs: {
       "src/a.js": expect.stringContaining("export const aa = 1;"),
       "src/b.js": expect.stringContaining("export const bb = aa + 0.5;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/b.js"]);
 });
 
 test("parses a virtual tsconfig for a project request", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
+    entrypoint: "src/index.ts",
     tsconfig: "tsconfig.lib.json",
     files: {
       "tsconfig.lib.json": JSON.stringify({
         compilerOptions: {
           module: "CommonJS",
+          outDir: "dist",
+          rootDir: "src",
         },
         files: ["src/index.ts"],
       }),
@@ -101,18 +123,19 @@ test("parses a virtual tsconfig for a project request", async () => {
   expect(result).toMatchObject({
     success: true,
     diagnostics: [],
-    js: "",
     outputs: {
-      "src/value.js": expect.stringContaining("exports.value = 41;"),
-      "src/index.js": expect.stringContaining('require("./value")'),
+      "dist/value.js": expect.stringContaining("exports.value = 41;"),
+      "dist/index.js": expect.stringContaining('require("./value")'),
     },
   });
+  expect(result.js).toBe(result.outputs["dist/index.js"]);
 });
 
 test("auto-selects virtual tsconfig.json when tsconfig is omitted", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
+    entrypoint: "src/selected.ts",
     files: {
       "tsconfig.json": JSON.stringify({
         compilerOptions: {
@@ -128,11 +151,11 @@ test("auto-selects virtual tsconfig.json when tsconfig is omitted", async () => 
   expect(result).toMatchObject({
     success: true,
     diagnostics: [],
-    js: "",
     outputs: {
       "src/selected.js": expect.stringContaining("exports.selected = 2;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/selected.js"]);
   expect(result.outputs).not.toHaveProperty("src/index.js");
 });
 
@@ -164,6 +187,7 @@ test("uses cwd for virtual project paths and output names", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/project",
+    entrypoint: "src/index.ts",
     tsconfig: "tsconfig.json",
     files: {
       "tsconfig.json": JSON.stringify({
@@ -180,12 +204,14 @@ test("uses cwd for virtual project paths and output names", async () => {
       "src/index.js": expect.stringContaining("export const value = 123;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/index.js"]);
 });
 
 test("resolves virtual node_modules package types", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
+    entrypoint: "src/index.ts",
     tsconfig: "tsconfig.json",
     files: {
       "tsconfig.json": JSON.stringify({
@@ -210,6 +236,7 @@ test("resolves virtual node_modules package types", async () => {
       "src/index.js": expect.stringContaining("export const value = external + 1;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/index.js"]);
   expect(result.outputs).not.toHaveProperty("node_modules/pkg/index.js");
 });
 
@@ -217,6 +244,7 @@ test("uses default virtual node_modules at-types roots from cwd", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
+    entrypoint: "src/index.ts",
     tsconfig: "tsconfig.json",
     files: {
       "tsconfig.json": JSON.stringify({
@@ -237,12 +265,14 @@ test("uses default virtual node_modules at-types roots from cwd", async () => {
       "src/index.js": expect.stringContaining("export const value = typedValue;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/index.js"]);
 });
 
 test("uses virtual tsconfig typeRoots", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
     cwd: "/app",
+    entrypoint: "src/index.ts",
     tsconfig: "tsconfig.json",
     files: {
       "tsconfig.json": JSON.stringify({
@@ -264,11 +294,13 @@ test("uses virtual tsconfig typeRoots", async () => {
       "src/index.js": expect.stringContaining("export const value = typedValue;"),
     },
   });
+  expect(result.js).toBe(result.outputs["src/index.js"]);
 });
 
 test("returns emitted mjs and cjs outputs for mts and cts sources", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
+    entrypoint: "src/module.mts",
     files: {
       "src/module.mts": "export const moduleValue = 1;",
       "src/common.cts": "export const commonValue = 2;",
@@ -278,7 +310,6 @@ test("returns emitted mjs and cjs outputs for mts and cts sources", async () => 
   expect(result).toMatchObject({
     success: true,
     diagnostics: [],
-    js: "",
     outputs: {
       "src/module.mjs": expect.any(String),
       "src/common.cjs": expect.any(String),
@@ -286,6 +317,7 @@ test("returns emitted mjs and cjs outputs for mts and cts sources", async () => 
   });
   expect(result.outputs["src/module.mjs"]).toContain("moduleValue");
   expect(result.outputs["src/common.cjs"]).toContain("commonValue");
+  expect(result.js).toBe(result.outputs["src/module.mjs"]);
 });
 
 test("reports a missing virtual tsconfig path", async () => {

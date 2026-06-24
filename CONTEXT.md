@@ -10,7 +10,7 @@ An in-memory TypeScript project whose files and options are supplied by the call
 _Avoid_: File graph, package, workspace
 
 **Project request**:
-The compile input that describes a **Virtual project** with `files`, optional `tsconfig`, and optional `cwd`.
+The compile input that describes a **Virtual project** with `files`, optional `entrypoint`, optional `tsconfig`, and optional `cwd`.
 _Avoid_: File map
 
 **Source-file map**:
@@ -25,17 +25,22 @@ _Avoid_: Host config, discovered config
 The current directory used to resolve relative virtual paths and default type roots for a **Project request**.
 _Avoid_: Process cwd, host cwd
 
-**Single-file request**:
-The backward-compatible compile input that contains one TypeScript source string and an optional virtual file name.
+**Entrypoint**:
+The virtual source path whose emitted JavaScript is copied into `CompileResult.js`.
+_Avoid_: Main file, target file
+
+**String shorthand**:
+The compile input that contains one TypeScript source string and is normalized to a **Project request** with `entrypoint: "index.ts"`.
 _Avoid_: Project request
 
 ## Relationships
 
 - A **Virtual project** is described by exactly one **Project request**.
 - A **Project request** contains exactly one **Source-file map**.
+- A **Project request** may set one **Entrypoint**.
 - A **Project request** may select one **Virtual config** by virtual file name, or use the default `tsconfig.json` at the **Virtual cwd**.
 - A **Project request** may set one **Virtual cwd**.
-- A **Single-file request** is not a **Virtual project**, even though both compile through the same wasm runtime.
+- A **String shorthand** is equivalent to a generated **Project request**, not a separate object API.
 
 ## Example dialogue
 

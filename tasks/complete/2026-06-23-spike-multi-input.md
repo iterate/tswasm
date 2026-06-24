@@ -5,11 +5,11 @@ size: medium
 
 # Spike Multi-Input Compilation
 
-Status summary: Complete. The spike adds a backward-compatible virtual project API, resolves relative imports across in-memory files, returns emitted JavaScript by output file name, supports tsc-like virtual `tsconfig.json` selection, supports virtual `cwd`, documents the behavior, and passes the local release check.
+Status summary: Complete. The spike adds a virtual project API with string shorthand, resolves relative imports across in-memory files, returns emitted JavaScript by output file name, supports entrypoint-selected `result.js`, supports tsc-like virtual `tsconfig.json` selection, supports virtual `cwd`, documents the behavior, and passes the local release check.
 
-- [x] Add a multi-input compile API while keeping `compile(string)` and `compile({ code, fileName })` working. _Implemented in `src/index.ts` as explicit project requests: `compile({ files, tsconfig, cwd })`._
+- [x] Add a multi-input compile API while keeping `compile(string)` as shorthand. _Implemented in `src/index.ts` as explicit project requests: `compile({ files, entrypoint, tsconfig, cwd })`; the removed `{ code, fileName }` object shape now fails if called dynamically._
 - [x] Resolve relative imports between in-memory files. _Implemented in `go/tswasm-wasm/main.go` through the existing inline VFS and TypeScript Go program creation._
-- [x] Return emitted JavaScript for every emitted source file. _Implemented as `CompileResult.outputs`, including `.js`, `.mjs`, and `.cjs`; single-file calls still populate `result.js`._
+- [x] Return emitted JavaScript for every emitted source file. _Implemented as `CompileResult.outputs`, including `.js`, `.mjs`, and `.cjs`; `entrypoint` selects which emitted output also populates `result.js`._
 - [x] Support an optional virtual `tsconfig`. _Implemented by parsing the named config file from the project `files` map with `tsoptions.ParseJsonSourceFileConfigFileContent`; omitted `tsconfig` uses virtual `tsconfig.json` at `cwd` when present, and no host config discovery was added._
 - [x] Keep default compiler behavior unchanged without a virtual config. _Implemented via `defaultCompilerOptions()` and `applyCompilerDefaults()`; no-config projects keep bundled ES2024 libs, `strict`, ES2024 target, ESNext module, and no source maps/declarations._
 - [x] Document the API and limits. _Implemented in `README.md` with project request, virtual `tsconfig`, virtual `node_modules`, and config `typeRoots` examples plus updated current limits._
@@ -17,15 +17,12 @@ Status summary: Complete. The spike adds a backward-compatible virtual project A
 
 ## Decisions
 
-- The project API is explicit: `compile({ files, tsconfig, cwd })`. This avoids the `code` filename ambiguity from a bare file-map overload and leaves room for project-level options.
+- The project API is explicit: `compile({ files, entrypoint, tsconfig, cwd })`. This avoids the `code` filename ambiguity from a bare file-map overload and leaves room for project-level options.
+- `compile(string)` is only a shorthand for a generated project request with `entrypoint: "index.ts"`, not a separate `{ code, fileName }` object API.
 - `tsconfig` support means "parse a config file named by the project request from the virtual `files` map, or use virtual `tsconfig.json` at `cwd` when `tsconfig` is omitted." It does not mean discovering or reading `tsconfig.json` from the runtime filesystem.
 - `typeRoots` belongs in virtual `tsconfig`. When it is not set, TypeScript Go derives default `node_modules/@types` roots from the virtual `cwd`/config path.
 - The first implementation should avoid hand-parsing compiler options. TypeScript Go already exposes `tsoptions.ParseJsonSourceFileConfigFileContent`, which can parse config JSON against a virtual filesystem.
 - This is a spike, but the branch should still leave the public types, README, and tests coherent enough for review.
-
-## Open Questions
-
-- Should `result.js` be empty, the first emitted output, or omitted from multi-input results in a later breaking API revision? For the spike, keep `js` for single-input compatibility and add an output map.
 
 ## Implementation Notes
 
@@ -38,3 +35,4 @@ Status summary: Complete. The spike adds a backward-compatible virtual project A
 - 2026-06-24: Removed the top-level `typeRoots` option because it duplicated `compilerOptions.typeRoots` and created unnecessary precedence questions.
 - 2026-06-24: Documented and tested the intentional tsc-like virtual `tsconfig.json` default, while keeping the boundary that only files supplied in the source-file map can participate.
 - 2026-06-24: Preserved `.mjs` and `.cjs` JavaScript emit outputs from `.mts` and `.cts` sources.
+- 2026-06-24: Removed the `{ code, fileName }` object API before release and added `entrypoint` so project requests can select the emitted file mirrored into `result.js`.
