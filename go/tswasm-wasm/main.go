@@ -167,7 +167,7 @@ func compileCode(request compileRequest) (result compileResult) {
 	emitResult := program.Emit(ctx, compiler.EmitOptions{
 		TargetSourceFile: targetSourceFile,
 		WriteFile: func(fileName string, text string, data *compiler.WriteFileData) error {
-			if strings.HasSuffix(fileName, ".js") {
+			if isJavaScriptOutput(fileName) {
 				outputs[toResultFileName(fileName, cwd)] = text
 			}
 			return nil
@@ -443,6 +443,12 @@ func toResultFileName(fileName string, cwd string) string {
 		}
 	}
 	return strings.TrimPrefix(fileName, "/")
+}
+
+func isJavaScriptOutput(fileName string) bool {
+	return strings.HasSuffix(fileName, ".js") ||
+		strings.HasSuffix(fileName, ".mjs") ||
+		strings.HasSuffix(fileName, ".cjs")
 }
 
 func (h *parseConfigHost) FS() vfs.FS {

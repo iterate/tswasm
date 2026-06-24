@@ -109,6 +109,33 @@ test("parses a virtual tsconfig for a project request", async () => {
   });
 });
 
+test("auto-selects virtual tsconfig.json when tsconfig is omitted", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    cwd: "/app",
+    files: {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          module: "CommonJS",
+        },
+        files: ["src/selected.ts"],
+      }),
+      "src/index.ts": "export const index = 1;",
+      "src/selected.ts": "export const selected = 2;",
+    },
+  });
+
+  expect(result).toMatchObject({
+    success: true,
+    diagnostics: [],
+    js: "",
+    outputs: {
+      "src/selected.js": expect.stringContaining("exports.selected = 2;"),
+    },
+  });
+  expect(result.outputs).not.toHaveProperty("src/index.js");
+});
+
 test("reports file names for virtual project diagnostics", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
@@ -237,6 +264,28 @@ test("uses virtual tsconfig typeRoots", async () => {
       "src/index.js": expect.stringContaining("export const value = typedValue;"),
     },
   });
+});
+
+test("returns emitted mjs and cjs outputs for mts and cts sources", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    files: {
+      "src/module.mts": "export const moduleValue = 1;",
+      "src/common.cts": "export const commonValue = 2;",
+    },
+  });
+
+  expect(result).toMatchObject({
+    success: true,
+    diagnostics: [],
+    js: "",
+    outputs: {
+      "src/module.mjs": expect.any(String),
+      "src/common.cjs": expect.any(String),
+    },
+  });
+  expect(result.outputs["src/module.mjs"]).toContain("moduleValue");
+  expect(result.outputs["src/common.cjs"]).toContain("commonValue");
 });
 
 test("reports a missing virtual tsconfig path", async () => {

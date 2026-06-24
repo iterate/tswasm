@@ -58,10 +58,10 @@ const result = ts.compile({
 console.log(result.outputs['src/b.js']) // "import { aa } from './a';\nexport const bb = aa + 0.5;\n"
 ```
 
-Pass `tsconfig` as a virtual file name when the virtual project needs
-config-selected files or compiler options. `tswasm` reads that config from the
-project `files` map and parses it with TypeScript Go's config parser. It never
-discovers or reads a real `tsconfig.json` from the host filesystem:
+Pass `tsconfig` as a virtual file name when the virtual project needs a config
+other than `tsconfig.json`. If `tsconfig` is omitted and the project `files` map
+contains `tsconfig.json` at the virtual `cwd`, `tswasm` uses it like `tsc` does.
+It never discovers or reads a real `tsconfig.json` from the host filesystem:
 
 ```ts
 const result = ts.compile({
@@ -163,12 +163,14 @@ const ts = await createCompiler({ wasm })
 
 - Compiles in-memory input only. Pass a string or `{ code, fileName }` for one
   file, or `{ files, tsconfig, cwd }` for a virtual project.
-- Without a virtual `tsconfig.json`, uses bundled `lib.es2024.d.ts` files,
-  `strict: true`, `target: ES2024`, and `module: ESNext`.
-- Supports a virtual `tsconfig` file path supplied in the project request. The
-  named config must exist in `files`; it can select files and compiler options
-  through TypeScript Go's parser, but the bundled ES2024 lib set still comes
-  from the package.
+- If `tsconfig` is omitted, uses a virtual `tsconfig.json` at `cwd` when that
+  file is present. If no virtual config is present, uses bundled
+  `lib.es2024.d.ts` files, `strict: true`, `target: ES2024`, and
+  `module: ESNext`.
+- Supports a virtual `tsconfig` file path supplied in the project request when
+  callers want a config other than `tsconfig.json`. The named config must exist
+  in `files`; it can select files and compiler options through TypeScript Go's
+  parser, but the bundled ES2024 lib set still comes from the package.
 - Does not load package dependencies, `node_modules`, real host files, or
   declaration files that are not supplied in the project `files` map.
 - Has no disposal API. Reusing one `createCompiler()` result is cheaper than
