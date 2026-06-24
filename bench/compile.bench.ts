@@ -157,7 +157,7 @@ for (const source of sourceCases) {
       "tswasm cold createCompiler+compile",
       async () => {
         const compiler = await createCompiler();
-        assertTswasmResult(compiler.compile({ code: source.code, fileName: source.fileName }));
+        compileWithTswasm(source, compiler);
       },
     ));
   }
@@ -231,7 +231,7 @@ function buildTsgoBinary() {
 }
 
 function validateSourceCase(source: SourceCase, compiler: Compiler) {
-  assertTswasmResult(compiler.compile({ code: source.code, fileName: source.fileName }));
+  compileWithTswasm(source, compiler);
   compileWithTypeScriptProgram(source);
   compileWithTranspileModule(source);
   compileWithTsMorph(source);
@@ -255,7 +255,7 @@ async function runTinybenchRows(source: SourceCase, compiler: Compiler): Promise
     {
       name: "tswasm warm compile",
       run: () => {
-        assertTswasmResult(compiler.compile({ code: source.code, fileName: source.fileName }));
+        compileWithTswasm(source, compiler);
       },
     },
     {
@@ -328,6 +328,16 @@ async function runFixedSampleRow(
     rme: null,
     method: "fixed-samples",
   };
+}
+
+function compileWithTswasm(source: SourceCase, compiler: Compiler) {
+  assertTswasmResult(compiler.compile({
+    entrypoint: source.fileName,
+    files: {
+      [source.fileName]: source.code,
+      "tsconfig.json": JSON.stringify({ files: [source.fileName] }),
+    },
+  }));
 }
 
 function compileWithTypeScriptProgram(source: SourceCase) {

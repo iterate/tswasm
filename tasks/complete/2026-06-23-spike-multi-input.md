@@ -36,3 +36,4 @@ Status summary: Complete. The spike adds a virtual project API with string short
 - 2026-06-24: Documented and tested the intentional tsc-like virtual `tsconfig.json` default, while keeping the boundary that only files supplied in the source-file map can participate.
 - 2026-06-24: Preserved `.mjs` and `.cjs` JavaScript emit outputs from `.mts` and `.cts` sources.
 - 2026-06-24: Removed the `{ code, fileName }` object API before release and added `entrypoint` so project requests can select the emitted file mirrored into `result.js`.
+- 2026-06-24: Updated the benchmark harness to compile tswasm cases through `{ files, entrypoint }` instead of the removed object API.
