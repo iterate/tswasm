@@ -169,6 +169,7 @@ func compileCode(request compileRequest) (result compileResult) {
 	})
 	result.Outputs = outputs
 	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics, cwd)...)
+	result.Success = !hasError(result.Diagnostics)
 	if emitResult.EmitSkipped {
 		return result
 	}
@@ -179,7 +180,6 @@ func compileCode(request compileRequest) (result compileResult) {
 			result.JS = outputs[toResultFileName(entrypointOutputFile, cwd)]
 		}
 	}
-	result.Success = !hasError(result.Diagnostics)
 	return result
 }
 

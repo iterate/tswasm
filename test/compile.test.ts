@@ -113,6 +113,29 @@ test("parses a virtual tsconfig for a project request", async () => {
   expect(result.js).toBe(result.outputs["dist/index.js"]);
 });
 
+test("reports success for clean noEmit projects", async () => {
+  const ts = await createCompiler();
+  const result = ts.compile({
+    entrypoint: "src/index.ts",
+    files: {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          noEmit: true,
+        },
+        files: ["src/index.ts"],
+      }),
+      "src/index.ts": "export const value: number = 123;",
+    },
+  });
+
+  expect(result).toMatchObject({
+    success: true,
+    diagnostics: [],
+    js: "",
+    outputs: {},
+  });
+});
+
 test("auto-selects virtual tsconfig.json when tsconfig is omitted", async () => {
   const ts = await createCompiler();
   const result = ts.compile({
