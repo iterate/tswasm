@@ -8,9 +8,9 @@ small wasm command from inside that subtree. Building from inside the upstream G
 module lets the command legally import `typescript-go/internal/...` without
 patching upstream compiler packages.
 
-The current API compiles one in-memory TypeScript file, `/input.ts` by default,
-with modern ECMAScript lib definitions and returns diagnostics plus emitted
-JavaScript.
+The current API compiles either a TypeScript source string shorthand or a
+virtual in-memory project request with a source-file map. It uses modern
+ECMAScript lib definitions and returns diagnostics plus emitted JavaScript.
 
 `tswasm` is published as an alpha. The package is useful for experiments,
 browser-side tools, Cloudflare Worker prototypes, and performance comparisons,
@@ -37,6 +37,102 @@ console.log(result.success) // true
 console.log(result.js) // "const x = 123"
 
 ts.compile('const s: string = 42') // { success: false, diagnostics: [{..., message: "Type 'number' is not assignable to type 'string'.", ...}] }
+```
+
+The string form is shorthand for a virtual project with `entrypoint:
+'index.ts'`, an `index.ts` source file, and a virtual `tsconfig.json` that
+selects that file.
+
+For multiple files, pass a project request with `files`. Relative imports
+resolve inside the same virtual filesystem, emitted JavaScript is returned by
+output file name, and `entrypoint` selects which emitted file also populates
+`result.js`:
+
+```ts
+import { createCompiler } from 'tswasm'
+
+const ts = await createCompiler()
+const result = ts.compile({
+  entrypoint: 'src/b.ts',
+  files: {
+    'src/a.ts': 'export const aa = 1',
+    'src/b.ts': "import { aa } from './a'\n\nexport const bb = aa + 0.5",
+  },
+})
+
+console.log(result.outputs['src/b.js']) // "import { aa } from './a';\nexport const bb = aa + 0.5;\n"
+console.log(result.js) // same as result.outputs['src/b.js']
+```
+
+Pass `tsconfig` as a virtual file name when the virtual project needs a config
+other than `tsconfig.json`. If `tsconfig` is omitted and the project `files` map
+contains `tsconfig.json` at the virtual `cwd`, `tswasm` uses it like `tsc` does.
+It never discovers or reads a real `tsconfig.json` from the host filesystem:
+
+```ts
+const result = ts.compile({
+  cwd: '/app',
+  entrypoint: 'src/index.ts',
+  tsconfig: 'tsconfig.lib.json',
+  files: {
+    'tsconfig.lib.json': JSON.stringify({
+      compilerOptions: { module: 'CommonJS' },
+      files: ['src/index.ts'],
+    }),
+    'src/value.ts': 'export const value = 41',
+    'src/index.ts': "import { value } from './value'\n\nexport const answer = value + 1",
+  },
+})
+
+console.log(result.outputs['src/index.js']) // CommonJS emit
+```
+
+The project `cwd` defaults to `/`. Relative file names, `tsconfig` `files` and
+`include` entries, default `node_modules/@types` lookup, and relative config
+paths such as `compilerOptions.typeRoots` are resolved from that virtual current
+directory. Dependencies can be supplied by adding their package files to the
+same `files` map:
+
+```ts
+const result = ts.compile({
+  cwd: '/app',
+  entrypoint: 'src/index.ts',
+  tsconfig: 'tsconfig.json',
+  files: {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        moduleResolution: 'Bundler',
+        types: ['custom'],
+      },
+      files: ['src/index.ts'],
+    }),
+    'src/index.ts': "import { external } from 'pkg'\n\nexport const value = external + typedValue",
+    'node_modules/pkg/package.json': JSON.stringify({ name: 'pkg', types: 'index.d.ts' }),
+    'node_modules/pkg/index.d.ts': 'export const external: number',
+    'node_modules/@types/custom/index.d.ts': 'declare const typedValue: number',
+  },
+})
+```
+
+Custom type roots belong in the virtual config:
+
+```ts
+ts.compile({
+  cwd: '/app',
+  entrypoint: 'src/index.ts',
+  tsconfig: 'tsconfig.json',
+  files: {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        typeRoots: ['types'],
+        types: ['custom'],
+      },
+      files: ['src/index.ts'],
+    }),
+    'src/index.ts': 'typedValue.toFixed()',
+    'types/custom/index.d.ts': 'declare const typedValue: number',
+  },
+})
 ```
 
 For bundlers and worker runtimes, pass the wasm module or URL explicitly:
@@ -74,12 +170,18 @@ const ts = await createCompiler({ wasm })
 
 ## Current Limits
 
-- Compiles one in-memory input file per call. Pass `fileName` when diagnostics
-  should use a path other than `/input.ts`.
-- Uses bundled `lib.es2024.d.ts` files, `strict: true`, `target: ES2024`, and
+- Compiles in-memory input only. Pass a source string shorthand, or pass
+  `{ files, entrypoint, tsconfig, cwd }` for a virtual project.
+- If `tsconfig` is omitted, uses a virtual `tsconfig.json` at `cwd` when that
+  file is present. If no virtual config is present, uses bundled
+  `lib.es2024.d.ts` files, `strict: true`, `target: ES2024`, and
   `module: ESNext`.
-- Does not load a `tsconfig.json`, file graph, package dependencies, or custom
-  declaration files yet.
+- Supports a virtual `tsconfig` file path supplied in the project request when
+  callers want a config other than `tsconfig.json`. The named config must exist
+  in `files`; it can select files and compiler options through TypeScript Go's
+  parser, but the bundled ES2024 lib set still comes from the package.
+- Does not load package dependencies, `node_modules`, real host files, or
+  declaration files that are not supplied in the project `files` map.
 - Has no disposal API. Reusing one `createCompiler()` result is cheaper than
   repeatedly creating new runtimes.
 - Ships a large wasm payload: about 29 MiB raw and about 6.8 MiB compressed in

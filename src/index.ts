@@ -1,13 +1,21 @@
 // @ts-ignore Generated into dist by scripts/build-wasm.ts.
 import "./wasm_exec.js";
 
-export interface CompileRequest {
-  code: string;
-  fileName?: string;
+export type SourceFileMap = Record<string, string>;
+
+export interface CompileProjectRequest {
+  files: SourceFileMap;
+  /** Virtual source path whose emitted JavaScript should populate result.js. */
+  entrypoint?: string;
+  /** Virtual path to a config file inside files, for example "tsconfig.lib.json". */
+  tsconfig?: string;
+  /** Virtual current directory for resolving relative project paths. */
+  cwd?: string;
 }
 
 export interface CompileResult {
   js: string;
+  outputs: Record<string, string>;
   diagnostics: Diagnostic[];
   success: boolean;
   compiler: CompilerInfo;
@@ -17,6 +25,7 @@ export interface Diagnostic {
   message: string;
   code: number;
   category: "error" | "warning" | "suggestion" | "message";
+  fileName?: string;
   line?: number;
   column?: number;
 }
@@ -30,7 +39,7 @@ export interface CompilerInfo {
 
 export interface Compiler {
   compile(code: string): CompileResult;
-  compile(request: CompileRequest): CompileResult;
+  compile(request: CompileProjectRequest): CompileResult;
 }
 
 export interface CreateCompilerOptions {
@@ -40,7 +49,7 @@ export interface CreateCompilerOptions {
 export const compilerInfo: CompilerInfo = {
   name: "typescript-go (tsgo)",
   runtime: "Go wasm",
-  mode: "single in-memory /input.ts",
+  mode: "in-memory virtual TypeScript project",
   lib: "bundled TypeScript lib.es2024.d.ts",
 };
 
@@ -48,6 +57,7 @@ type NativeCompile = (requestJson: string) => string;
 
 interface NativeCompileResult {
   js: string;
+  outputs: Record<string, string>;
   diagnostics: Diagnostic[];
   success: boolean;
 }
@@ -73,8 +83,8 @@ export async function createCompiler(
   const nativeCompile = await createNativeCompile(wasm);
 
   return {
-    compile(input: string | CompileRequest) {
-      const request = typeof input === "string" ? { code: input } : input;
+    compile(input: string | CompileProjectRequest) {
+      const request = normalizeCompileInput(input);
       const nativeResult = JSON.parse(
         nativeCompile(JSON.stringify(request))
       ) as NativeCompileResult;
@@ -84,6 +94,20 @@ export async function createCompiler(
       };
     },
   };
+}
+
+function normalizeCompileInput(input: string | CompileProjectRequest) {
+  if (typeof input === "string") {
+    return {
+      entrypoint: "index.ts",
+      files: {
+        "index.ts": input,
+        "tsconfig.json": JSON.stringify({ files: ["index.ts"] }),
+      },
+    };
+  }
+
+  return input;
 }
 
 function defaultWasmUrl(): URL {

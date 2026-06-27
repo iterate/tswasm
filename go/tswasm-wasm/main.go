@@ -19,14 +19,14 @@ import (
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/diagnostics"
 	"github.com/microsoft/typescript-go/internal/locale"
+	"github.com/microsoft/typescript-go/internal/outputpaths"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/tspath"
 	"github.com/microsoft/typescript-go/internal/vfs"
 )
 
 const (
-	currentDirectory = "/"
-	defaultInputFile = "/input.ts"
+	defaultCurrentDirectory = "/"
 )
 
 //go:embed libs/*.d.ts
@@ -40,12 +40,15 @@ var standardLibraryCache struct {
 }
 
 type compileRequest struct {
-	Code     string `json:"code"`
-	FileName string `json:"fileName"`
+	Files      map[string]string `json:"files"`
+	Entrypoint string            `json:"entrypoint"`
+	TSConfig   string            `json:"tsconfig"`
+	Cwd        string            `json:"cwd"`
 }
 
 type compileResult struct {
 	JS          string              `json:"js"`
+	Outputs     map[string]string   `json:"outputs"`
 	Diagnostics []compileDiagnostic `json:"diagnostics"`
 	Success     bool                `json:"success"`
 }
@@ -54,8 +57,14 @@ type compileDiagnostic struct {
 	Message  string `json:"message"`
 	Code     int    `json:"code"`
 	Category string `json:"category"`
+	FileName string `json:"fileName,omitempty"`
 	Line     *int   `json:"line,omitempty"`
 	Column   *int   `json:"column,omitempty"`
+}
+
+type parseConfigHost struct {
+	fs               vfs.FS
+	currentDirectory string
 }
 
 func main() {
@@ -100,13 +109,6 @@ func compileCode(request compileRequest) (result compileResult) {
 		}
 	}()
 
-	inputFile := request.FileName
-	if inputFile == "" {
-		inputFile = defaultInputFile
-	}
-	if !strings.HasPrefix(inputFile, "/") {
-		inputFile = "/" + inputFile
-	}
 	sourceFiles, fileNames, err := standardLibraryFiles()
 	if err != nil {
 		return compileResult{
@@ -117,36 +119,28 @@ func compileCode(request compileRequest) (result compileResult) {
 			Success: false,
 		}
 	}
-	sourceFiles[inputFile] = request.Code
-	fileNames = append(fileNames, inputFile)
 
-	options := &core.CompilerOptions{
-		Target:              core.ScriptTargetES2024,
-		Module:              core.ModuleKindESNext,
-		NoLib:               core.TSTrue,
-		SkipLibCheck:        core.TSTrue,
-		Strict:              core.TSTrue,
-		SkipDefaultLibCheck: core.TSTrue,
-		SourceMap:           core.TSFalse,
-		Declaration:         core.TSFalse,
+	cwd := normalizeCurrentDirectory(request.Cwd)
+	config, entrypointFile, requestDiagnostics := prepareCompileConfig(request, sourceFiles, fileNames, cwd)
+	if len(requestDiagnostics) > 0 {
+		return compileResult{
+			Outputs:     map[string]string{},
+			Diagnostics: requestDiagnostics,
+			Success:     false,
+		}
 	}
-	config := &tsoptions.ParsedCommandLine{
-		ParsedConfig: &core.ParsedOptions{
-			FileNames:       fileNames,
-			CompilerOptions: options,
-		},
-	}
-	host := compiler.NewCompilerHost(currentDirectory, newInlineFS(sourceFiles), currentDirectory, nil, nil)
+
+	host := compiler.NewCompilerHost(cwd, newInlineFS(sourceFiles), defaultCurrentDirectory, nil, nil)
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:         config,
 		Host:           host,
 		SingleThreaded: core.TSTrue,
 	})
-	sourceFile := findSourceFile(program, inputFile)
-	if sourceFile == nil {
+	if entrypointFile != "" && findSourceFile(program, entrypointFile) == nil {
 		return compileResult{
+			Outputs: map[string]string{},
 			Diagnostics: []compileDiagnostic{{
-				Message:  "typescript-go wasm did not load " + inputFile,
+				Message:  "compile entrypoint file was not included in the program: " + toResultFileName(entrypointFile, cwd),
 				Category: diagnostics.CategoryError.Name(),
 			}},
 			Success: false,
@@ -157,31 +151,214 @@ func compileCode(request compileRequest) (result compileResult) {
 	rawDiagnostics := compiler.GetDiagnosticsOfAnyProgram(
 		ctx,
 		program,
-		sourceFile,
+		nil,
 		false,
 		program.GetBindDiagnostics,
 		program.GetSemanticDiagnostics,
 	)
-	result.Diagnostics = formatDiagnostics(rawDiagnostics)
+	result.Diagnostics = formatDiagnostics(rawDiagnostics, cwd)
 
-	var jsText string
+	outputs := map[string]string{}
 	emitResult := program.Emit(ctx, compiler.EmitOptions{
-		TargetSourceFile: sourceFile,
 		WriteFile: func(fileName string, text string, data *compiler.WriteFileData) error {
-			if strings.HasSuffix(fileName, ".js") {
-				jsText = text
+			if isJavaScriptOutput(fileName) {
+				outputs[toResultFileName(fileName, cwd)] = text
 			}
 			return nil
 		},
 	})
-	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics)...)
+	result.Outputs = outputs
+	result.Diagnostics = append(result.Diagnostics, formatDiagnostics(emitResult.Diagnostics, cwd)...)
+	result.Success = !hasError(result.Diagnostics)
 	if emitResult.EmitSkipped {
 		return result
 	}
 
-	result.JS = jsText
-	result.Success = !hasError(result.Diagnostics)
+	if entrypointFile != "" {
+		entrypointOutputFile := outputpaths.GetOutputJSFileName(entrypointFile, config.CompilerOptions(), config)
+		if entrypointOutputFile != "" {
+			result.JS = outputs[toResultFileName(entrypointOutputFile, cwd)]
+		}
+	}
 	return result
+}
+
+func prepareCompileConfig(
+	request compileRequest,
+	sourceFiles map[string]string,
+	standardLibraryFileNames []string,
+	cwd string,
+) (*tsoptions.ParsedCommandLine, string, []compileDiagnostic) {
+	if request.Files == nil {
+		return nil, "", []compileDiagnostic{{
+			Message:  "compile project request must include files",
+			Category: diagnostics.CategoryError.Name(),
+		}}
+	}
+
+	userFileNames := make([]string, 0, len(request.Files))
+	configFileName := normalizeProjectConfigFileName(request.TSConfig, cwd)
+	entrypointFile := ""
+	if request.Entrypoint != "" {
+		entrypointFile = normalizeInputFileName(request.Entrypoint, cwd)
+	}
+	for fileName, contents := range request.Files {
+		if fileName == "" {
+			return nil, "", []compileDiagnostic{{
+				Message:  "compile file map cannot include an empty file name",
+				Category: diagnostics.CategoryError.Name(),
+			}}
+		}
+		normalized := normalizeInputFileName(fileName, cwd)
+		sourceFiles[normalized] = contents
+		if isRootSourceFile(normalized, configFileName) {
+			userFileNames = append(userFileNames, normalized)
+		}
+	}
+	slices.Sort(userFileNames)
+
+	if entrypointFile != "" {
+		if _, ok := sourceFiles[entrypointFile]; !ok {
+			return nil, "", []compileDiagnostic{{
+				Message:  "compile entrypoint file was not found in files: " + toResultFileName(entrypointFile, cwd),
+				Category: diagnostics.CategoryError.Name(),
+			}}
+		}
+	}
+
+	configFileContents, hasConfig := sourceFiles[configFileName]
+	if request.TSConfig != "" && !hasConfig {
+		return nil, "", []compileDiagnostic{{
+			Message:  "compile tsconfig file was not found in files: " + toResultFileName(configFileName, cwd),
+			Category: diagnostics.CategoryError.Name(),
+		}}
+	}
+	if hasConfig {
+		config := parseVirtualTsConfig(configFileName, configFileContents, sourceFiles, cwd)
+		applyCompilerDefaults(config.ParsedConfig.CompilerOptions)
+		config.ParsedConfig.FileNames = mergeFileNames(standardLibraryFileNames, config.ParsedConfig.FileNames)
+		return config, entrypointFile, nil
+	}
+
+	if len(userFileNames) == 0 {
+		return nil, "", []compileDiagnostic{{
+			Message:  "compile file map must include at least one TypeScript source file",
+			Category: diagnostics.CategoryError.Name(),
+		}}
+	}
+
+	fileNames := mergeFileNames(standardLibraryFileNames, userFileNames)
+	return newParsedCommandLine(defaultCompilerOptions(), fileNames), entrypointFile, nil
+}
+
+func defaultCompilerOptions() *core.CompilerOptions {
+	options := &core.CompilerOptions{}
+	applyCompilerDefaults(options)
+	return options
+}
+
+func applyCompilerDefaults(options *core.CompilerOptions) {
+	if options.Target == core.ScriptTargetNone {
+		options.Target = core.ScriptTargetES2024
+	}
+	if options.Module == core.ModuleKindNone {
+		options.Module = core.ModuleKindESNext
+	}
+	if options.Strict == core.TSUnknown {
+		options.Strict = core.TSTrue
+	}
+	if options.SourceMap == core.TSUnknown {
+		options.SourceMap = core.TSFalse
+	}
+	if options.Declaration == core.TSUnknown {
+		options.Declaration = core.TSFalse
+	}
+	options.NoLib = core.TSTrue
+	options.SkipLibCheck = core.TSTrue
+	options.SkipDefaultLibCheck = core.TSTrue
+}
+
+func newParsedCommandLine(options *core.CompilerOptions, fileNames []string) *tsoptions.ParsedCommandLine {
+	return &tsoptions.ParsedCommandLine{
+		ParsedConfig: &core.ParsedOptions{
+			FileNames:       fileNames,
+			CompilerOptions: options,
+		},
+	}
+}
+
+func parseVirtualTsConfig(
+	configFileName string,
+	contents string,
+	sourceFiles map[string]string,
+	cwd string,
+) *tsoptions.ParsedCommandLine {
+	host := &parseConfigHost{
+		fs:               newInlineFS(sourceFiles),
+		currentDirectory: cwd,
+	}
+	configDir := tspath.GetDirectoryPath(configFileName)
+	configSourceFile := tsoptions.NewTsconfigSourceFileFromFilePath(
+		configFileName,
+		tspath.ToPath(configFileName, cwd, true),
+		contents,
+	)
+	return tsoptions.ParseJsonSourceFileConfigFileContent(
+		configSourceFile,
+		host,
+		configDir,
+		nil,
+		nil,
+		configFileName,
+		nil,
+		nil,
+		nil,
+	)
+}
+
+func normalizeCurrentDirectory(cwd string) string {
+	if cwd == "" {
+		return defaultCurrentDirectory
+	}
+	return tspath.GetNormalizedAbsolutePath(cwd, defaultCurrentDirectory)
+}
+
+func normalizeProjectConfigFileName(tsconfig string, cwd string) string {
+	if tsconfig == "" {
+		return normalizeInputFileName("tsconfig.json", cwd)
+	}
+	return normalizeInputFileName(tsconfig, cwd)
+}
+
+func normalizeInputFileName(fileName string, cwd string) string {
+	return tspath.GetNormalizedAbsolutePath(fileName, cwd)
+}
+
+func isRootSourceFile(fileName string, configFileName string) bool {
+	if fileName == configFileName || strings.Contains(fileName, "/node_modules/") {
+		return false
+	}
+	return strings.HasSuffix(fileName, ".ts") ||
+		strings.HasSuffix(fileName, ".tsx") ||
+		strings.HasSuffix(fileName, ".mts") ||
+		strings.HasSuffix(fileName, ".cts") ||
+		strings.HasSuffix(fileName, ".js") ||
+		strings.HasSuffix(fileName, ".jsx") ||
+		strings.HasSuffix(fileName, ".mjs") ||
+		strings.HasSuffix(fileName, ".cjs")
+}
+
+func mergeFileNames(first []string, second []string) []string {
+	merged := make([]string, 0, len(first)+len(second))
+	seen := map[string]struct{}{}
+	for _, fileName := range append(slices.Clone(first), second...) {
+		if _, ok := seen[fileName]; ok {
+			continue
+		}
+		seen[fileName] = struct{}{}
+		merged = append(merged, fileName)
+	}
+	return merged
 }
 
 func standardLibraryFiles() (map[string]string, []string, error) {
@@ -238,7 +415,7 @@ func findSourceFile(program *compiler.Program, fileName string) *ast.SourceFile 
 	return nil
 }
 
-func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
+func formatDiagnostics(rawDiagnostics []*ast.Diagnostic, cwd string) []compileDiagnostic {
 	formatted := make([]compileDiagnostic, 0, len(rawDiagnostics))
 	for _, raw := range rawDiagnostics {
 		diagnostic := compileDiagnostic{
@@ -247,15 +424,43 @@ func formatDiagnostics(rawDiagnostics []*ast.Diagnostic) []compileDiagnostic {
 			Category: raw.Category().Name(),
 		}
 
-		if file := raw.File(); file != nil && raw.Pos() >= 0 {
-			line, column := lineAndColumn(file, raw.Pos())
-			diagnostic.Line = &line
-			diagnostic.Column = &column
+		if file := raw.File(); file != nil {
+			diagnostic.FileName = toResultFileName(file.FileName(), cwd)
+			if raw.Pos() >= 0 {
+				line, column := lineAndColumn(file, raw.Pos())
+				diagnostic.Line = &line
+				diagnostic.Column = &column
+			}
 		}
 
 		formatted = append(formatted, diagnostic)
 	}
 	return formatted
+}
+
+func toResultFileName(fileName string, cwd string) string {
+	trimmedCwd := strings.TrimRight(cwd, "/")
+	if trimmedCwd != "" && trimmedCwd != "/" {
+		prefix := trimmedCwd + "/"
+		if strings.HasPrefix(fileName, prefix) {
+			return strings.TrimPrefix(fileName, prefix)
+		}
+	}
+	return strings.TrimPrefix(fileName, "/")
+}
+
+func isJavaScriptOutput(fileName string) bool {
+	return strings.HasSuffix(fileName, ".js") ||
+		strings.HasSuffix(fileName, ".mjs") ||
+		strings.HasSuffix(fileName, ".cjs")
+}
+
+func (h *parseConfigHost) FS() vfs.FS {
+	return h.fs
+}
+
+func (h *parseConfigHost) GetCurrentDirectory() string {
+	return h.currentDirectory
 }
 
 func flattenDiagnostic(diagnostic *ast.Diagnostic) string {
@@ -286,9 +491,13 @@ func hasError(items []compileDiagnostic) bool {
 }
 
 func encodeResult(result compileResult) string {
+	if result.Outputs == nil {
+		result.Outputs = map[string]string{}
+	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		encoded, _ = json.Marshal(compileResult{
+			Outputs: map[string]string{},
 			Diagnostics: []compileDiagnostic{{
 				Message:  "failed to encode compiler result: " + err.Error(),
 				Category: diagnostics.CategoryError.Name(),
